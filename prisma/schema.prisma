@@ -1,0 +1,209 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+enum StatusMesa {
+  AVAILABLE
+  OCCUPIED
+  RESERVED
+}
+
+enum StatusPedido {
+  OPEN
+  IN_KITCHEN
+  READY
+  DELIVERED
+  CANCELED
+  CLOSED
+}
+
+enum StatusItemPedido {
+  PENDING
+  PREPARING
+  READY
+  DELIVERED
+  CANCELED
+}
+
+enum FormaPagamento {
+  CASH
+  CREDIT
+  DEBIT
+  PIX
+}
+
+enum NomePerfil {
+  ADMIN
+  MANAGER
+  CHEF
+  WAITER
+  CASHIER
+}
+
+model Categoria {
+  id           String     @id @default(uuid()) @db.Uuid
+  nome         String     @unique
+  ativo        Boolean    @default(true)
+  criadoEm     DateTime   @default(now()) @db.Timestamptz(6)
+  atualizadoEm DateTime   @default(now()) @updatedAt @db.Timestamptz(6)
+  produtos     Produto[]
+
+  @@map("categorias")
+}
+
+model Produto {
+  id           String         @id @default(uuid()) @db.Uuid
+  nome         String
+  descricao    String?
+  preco        Decimal        @db.Decimal
+  ativo        Boolean        @default(true)
+  categoriaId  String         @db.Uuid
+  criadoEm     DateTime       @default(now()) @db.Timestamptz(6)
+  atualizadoEm DateTime       @default(now()) @updatedAt @db.Timestamptz(6)
+
+  categoria    Categoria      @relation(fields: [categoriaId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  itensPedido  ItemPedido[]
+
+  @@index([categoriaId], map: "produtos_categoriaId_idx_63b46427")
+  @@map("produtos")
+}
+
+model Mesa {
+  id           String       @id @default(uuid()) @db.Uuid
+  numero       Int          @unique
+  status       StatusMesa   @default(AVAILABLE)
+  criadoEm     DateTime     @default(now()) @db.Timestamptz(6)
+  atualizadoEm DateTime     @default(now()) @updatedAt @db.Timestamptz(6)
+
+  pedidos      Pedido[]
+
+  @@map("mesas")
+}
+
+model Pedido {
+  id           String         @id @default(uuid()) @db.Uuid
+  mesaId       String?        @db.Uuid
+  usuarioId    String         @db.Uuid
+  status       StatusPedido   @default(OPEN)
+  criadoEm     DateTime       @default(now()) @db.Timestamptz(6)
+  atualizadoEm DateTime       @default(now()) @updatedAt @db.Timestamptz(6)
+  fechadoEm    DateTime?      @db.Timestamptz(6)
+
+  mesa         Mesa?          @relation(fields: [mesaId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  usuario      Usuario        @relation(fields: [usuarioId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  itens        ItemPedido[]
+  pagamentos   Pagamento[]
+
+  @@index([mesaId], map: "pedidos_mesaId_idx_81c645f6")
+  @@index([status], map: "pedidos_status_idx_e98638ab")
+  @@index([usuarioId], map: "pedidos_usuarioId_idx_5f01c7d6")
+  @@map("pedidos")
+}
+
+model ItemPedido {
+  id            String            @id @default(uuid()) @db.Uuid
+  pedidoId      String            @db.Uuid
+  produtoId     String            @db.Uuid
+  quantidade    Int
+  precoUnitario Decimal           @db.Decimal
+  status        StatusItemPedido  @default(PENDING)
+  observacoes   String?
+  criadoEm      DateTime          @default(now()) @db.Timestamptz(6)
+  atualizadoEm  DateTime          @default(now()) @updatedAt @db.Timestamptz(6)
+
+  pedido        Pedido            @relation(fields: [pedidoId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  produto       Produto           @relation(fields: [produtoId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([pedidoId], map: "itens_pedido_pedidoId_idx_4742647d")
+  @@index([produtoId], map: "itens_pedido_produtoId_idx_eb62fdb9")
+  @@map("itens_pedido")
+}
+
+model Pagamento {
+  id       String         @id @default(uuid()) @db.Uuid
+  pedidoId String         @db.Uuid
+  forma    FormaPagamento
+  valor    Decimal        @db.Decimal
+  criadoEm DateTime       @default(now()) @db.Timestamptz(6)
+
+  pedido   Pedido         @relation(fields: [pedidoId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([pedidoId], map: "pagamentos_pedidoId_idx_4742647d")
+  @@map("pagamentos")
+}
+
+model Perfil {
+  id                String              @id @default(uuid()) @db.Uuid
+  nome              NomePerfil          @unique
+  descricao         String?
+  criadoEm          DateTime            @default(now()) @db.Timestamptz(6)
+  atualizadoEm      DateTime            @default(now()) @updatedAt @db.Timestamptz(6)
+
+  usuarios          Usuario[]
+  perfilPermissoes  PerfilPermissao[]
+
+  @@map("perfis")
+}
+
+model Permissao {
+  id                String              @id @default(uuid()) @db.Uuid
+  nome              String              @unique
+  descricao         String?
+  criadoEm          DateTime            @default(now()) @db.Timestamptz(6)
+
+  perfilPermissoes  PerfilPermissao[]
+
+  @@map("permissoes")
+}
+
+model PerfilPermissao {
+  perfilId    String    @db.Uuid
+  permissaoId String    @db.Uuid
+
+  perfil      Perfil    @relation(fields: [perfilId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  permissao   Permissao @relation(fields: [permissaoId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@id([perfilId, permissaoId])
+  @@index([perfilId], map: "perfil_permissoes_perfilId_idx_18f1fe5e")
+  @@index([permissaoId], map: "perfil_permissoes_permissaoId_idx_32efd59e")
+  @@map("perfil_permissoes")
+}
+
+model Usuario {
+  id             String           @id @default(uuid()) @db.Uuid
+  nome           String
+  pin            String
+  ativo          Boolean          @default(true)
+  perfilId       String           @db.Uuid
+  criadoEm       DateTime         @default(now()) @db.Timestamptz(6)
+  atualizadoEm   DateTime         @default(now()) @updatedAt @db.Timestamptz(6)
+
+  perfil         Perfil           @relation(fields: [perfilId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  pedidos        Pedido[]
+  logsAuditoria  LogAuditoria[]
+
+  @@index([perfilId], map: "usuarios_perfilId_idx_18f1fe5e")
+  @@map("usuarios")
+}
+
+model LogAuditoria {
+  id String @id @default(uuid()) @db.Uuid
+  usuarioId  String   @db.Uuid
+  acao       String
+  entidade   String
+  entidadeId String?
+  metadados  Json?    @db.Json
+  criadoEm   DateTime @default(now()) @db.Timestamptz(6)
+
+  usuario    Usuario  @relation(fields: [usuarioId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([entidade, entidadeId], map: "logs_auditoria_entidade_entidadeId_idx_8ba55fde")
+  @@index([usuarioId], map: "logs_auditoria_usuarioId_idx_5f01c7d6")
+  @@map("logs_auditoria")
+}

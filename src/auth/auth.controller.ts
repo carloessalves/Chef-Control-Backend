@@ -1,0 +1,14 @@
+// src/auth/auth.controller.ts
+import { Controller, Post, Body } from '@nestjs/common';
+import { AuthService } from './auth.service.js';
+import { LoginDto } from './dto/login.dto.js';
+
+@Controller('auth')
+export class AuthController {
+  constructor(private authService: AuthService) {}
+
+  @Post('login')
+  login(@Body() dto: LoginDto) {
+    return this.authService.login(dto.pin);
+  }
+}

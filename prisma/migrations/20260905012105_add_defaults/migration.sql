@@ -1,0 +1,20 @@
+-- AlterTable
+ALTER TABLE "categorias" ALTER COLUMN "atualizadoEm" SET DEFAULT CURRENT_TIMESTAMP;
+
+-- AlterTable
+ALTER TABLE "itens_pedido" ALTER COLUMN "atualizadoEm" SET DEFAULT CURRENT_TIMESTAMP;
+
+-- AlterTable
+ALTER TABLE "mesas" ALTER COLUMN "atualizadoEm" SET DEFAULT CURRENT_TIMESTAMP;
+
+-- AlterTable
+ALTER TABLE "pedidos" ALTER COLUMN "atualizadoEm" SET DEFAULT CURRENT_TIMESTAMP;
+
+-- AlterTable
+ALTER TABLE "perfis" ALTER COLUMN "atualizadoEm" SET DEFAULT CURRENT_TIMESTAMP;
+
+-- AlterTable
+ALTER TABLE "produtos" ALTER COLUMN "atualizadoEm" SET DEFAULT CURRENT_TIMESTAMP;
+
+-- AlterTable
+ALTER TABLE "usuarios" ALTER COLUMN "atualizadoEm" SET DEFAULT CURRENT_TIMESTAMP;
