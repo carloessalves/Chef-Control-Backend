@@ -8,202 +8,211 @@ datasource db {
   directUrl = env("DIRECT_URL")
 }
 
-enum StatusMesa {
-  AVAILABLE
-  OCCUPIED
-  RESERVED
-}
-
-enum StatusPedido {
-  OPEN
-  IN_KITCHEN
-  READY
-  DELIVERED
-  CANCELED
-  CLOSED
-}
-
-enum StatusItemPedido {
-  PENDING
-  PREPARING
-  READY
-  DELIVERED
-  CANCELED
-}
-
-enum FormaPagamento {
-  CASH
-  CREDIT
-  DEBIT
-  PIX
-}
-
-enum NomePerfil {
+enum PapelUsuario {
   ADMIN
-  MANAGER
-  CHEF
-  WAITER
-  CASHIER
+  EMISSOR
+  AUDITOR
 }
 
-model Categoria {
+enum CondicaoArmazenamento {
+  AMBIENTE
+  RESFRIADO
+  CONGELADO
+}
+
+enum StatusEtiqueta {
+  VALIDA
+  VENCIDA
+  DESCARTADA
+  CONSUMIDO
+}
+
+enum TipoEvento {
+  CREATE
+  UPDATE
+  DELETE
+  EMIT
+  REPRINT
+  LOGIN
+}
+
+// ============= Model Unidade ===============
+model Unidade {
   id           String     @id @default(uuid()) @db.Uuid
-  nome         String     @unique
+  nome         String
+  cnpj         String?
   ativo        Boolean    @default(true)
   criadoEm     DateTime   @default(now()) @db.Timestamptz(6)
   atualizadoEm DateTime   @default(now()) @updatedAt @db.Timestamptz(6)
-  produtos     Produto[]
 
-  @@map("categorias")
+  usuarios     Usuario[]
+  emissores    Emissor[]
+  produtos     ProdutoManipulado[]
+  etiquetas    Etiqueta[]
+  dispositivos Dispositivo[]
+
+  @@map("unidades")
 }
 
-model Produto {
-  id           String         @id @default(uuid()) @db.Uuid
-  nome         String
-  descricao    String?
-  preco        Decimal        @db.Decimal
-  ativo        Boolean        @default(true)
-  categoriaId  String         @db.Uuid
-  criadoEm     DateTime       @default(now()) @db.Timestamptz(6)
-  atualizadoEm DateTime       @default(now()) @updatedAt @db.Timestamptz(6)
-
-  categoria    Categoria      @relation(fields: [categoriaId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  itensPedido  ItemPedido[]
-
-  @@index([categoriaId], map: "produtos_categoriaId_idx_63b46427")
-  @@map("produtos")
-}
-
-model Mesa {
-  id           String       @id @default(uuid()) @db.Uuid
-  numero       Int          @unique
-  status       StatusMesa   @default(AVAILABLE)
-  criadoEm     DateTime     @default(now()) @db.Timestamptz(6)
-  atualizadoEm DateTime     @default(now()) @updatedAt @db.Timestamptz(6)
-
-  pedidos      Pedido[]
-
-  @@map("mesas")
-}
-
-model Pedido {
-  id           String         @id @default(uuid()) @db.Uuid
-  mesaId       String?        @db.Uuid
-  usuarioId    String         @db.Uuid
-  status       StatusPedido   @default(OPEN)
-  criadoEm     DateTime       @default(now()) @db.Timestamptz(6)
-  atualizadoEm DateTime       @default(now()) @updatedAt @db.Timestamptz(6)
-  fechadoEm    DateTime?      @db.Timestamptz(6)
-
-  mesa         Mesa?          @relation(fields: [mesaId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  usuario      Usuario        @relation(fields: [usuarioId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  itens        ItemPedido[]
-  pagamentos   Pagamento[]
-
-  @@index([mesaId], map: "pedidos_mesaId_idx_81c645f6")
-  @@index([status], map: "pedidos_status_idx_e98638ab")
-  @@index([usuarioId], map: "pedidos_usuarioId_idx_5f01c7d6")
-  @@map("pedidos")
-}
-
-model ItemPedido {
-  id            String            @id @default(uuid()) @db.Uuid
-  pedidoId      String            @db.Uuid
-  produtoId     String            @db.Uuid
-  quantidade    Int
-  precoUnitario Decimal           @db.Decimal
-  status        StatusItemPedido  @default(PENDING)
-  observacoes   String?
-  criadoEm      DateTime          @default(now()) @db.Timestamptz(6)
-  atualizadoEm  DateTime          @default(now()) @updatedAt @db.Timestamptz(6)
-
-  pedido        Pedido            @relation(fields: [pedidoId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  produto       Produto           @relation(fields: [produtoId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-
-  @@index([pedidoId], map: "itens_pedido_pedidoId_idx_4742647d")
-  @@index([produtoId], map: "itens_pedido_produtoId_idx_eb62fdb9")
-  @@map("itens_pedido")
-}
-
-model Pagamento {
-  id       String         @id @default(uuid()) @db.Uuid
-  pedidoId String         @db.Uuid
-  forma    FormaPagamento
-  valor    Decimal        @db.Decimal
-  criadoEm DateTime       @default(now()) @db.Timestamptz(6)
-
-  pedido   Pedido         @relation(fields: [pedidoId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-
-  @@index([pedidoId], map: "pagamentos_pedidoId_idx_4742647d")
-  @@map("pagamentos")
-}
-
-model Perfil {
-  id                String              @id @default(uuid()) @db.Uuid
-  nome              NomePerfil          @unique
-  descricao         String?
-  criadoEm          DateTime            @default(now()) @db.Timestamptz(6)
-  atualizadoEm      DateTime            @default(now()) @updatedAt @db.Timestamptz(6)
-
-  usuarios          Usuario[]
-  perfilPermissoes  PerfilPermissao[]
-
-  @@map("perfis")
-}
-
-model Permissao {
-  id                String              @id @default(uuid()) @db.Uuid
-  nome              String              @unique
-  descricao         String?
-  criadoEm          DateTime            @default(now()) @db.Timestamptz(6)
-
-  perfilPermissoes  PerfilPermissao[]
-
-  @@map("permissoes")
-}
-
-model PerfilPermissao {
-  perfilId    String    @db.Uuid
-  permissaoId String    @db.Uuid
-
-  perfil      Perfil    @relation(fields: [perfilId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  permissao   Permissao @relation(fields: [permissaoId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-
-  @@id([perfilId, permissaoId])
-  @@index([perfilId], map: "perfil_permissoes_perfilId_idx_18f1fe5e")
-  @@index([permissaoId], map: "perfil_permissoes_permissaoId_idx_32efd59e")
-  @@map("perfil_permissoes")
-}
-
+// ============= Model Usuário ===============
 model Usuario {
-  id             String           @id @default(uuid()) @db.Uuid
-  nome           String
-  pin            String
-  ativo          Boolean          @default(true)
-  perfilId       String           @db.Uuid
-  criadoEm       DateTime         @default(now()) @db.Timestamptz(6)
-  atualizadoEm   DateTime         @default(now()) @updatedAt @db.Timestamptz(6)
+  id                String            @id @default(uuid()) @db.Uuid
+  nome              String
+  funcao            String?
+  papel             PapelUsuario
+  pin               String
+  ativo             Boolean           @default(true)
+  unidadeId         String            @db.Uuid
+  criadoEm          DateTime          @default(now()) @db.Timestamptz(6)
+  atualizadoEm      DateTime          @default(now()) @updatedAt @db.Timestamptz(6)
 
-  perfil         Perfil           @relation(fields: [perfilId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  pedidos        Pedido[]
-  logsAuditoria  LogAuditoria[]
+  unidade           Unidade           @relation(fields: [unidadeId], references: [id])
+  etiquetasEmitidas Etiqueta[]        @relation("EmissorGestao")
+  eventos           EventoAuditoria[]
+  refreshTokens     RefreshToken[]
 
-  @@index([perfilId], map: "usuarios_perfilId_idx_18f1fe5e")
+  @@unique([unidadeId, pin])
+  @@index([unidadeId])
   @@map("usuarios")
 }
 
-model LogAuditoria {
-  id String @id @default(uuid()) @db.Uuid
-  usuarioId  String   @db.Uuid
-  acao       String
-  entidade   String
-  entidadeId String?
-  metadados  Json?    @db.Json
-  criadoEm   DateTime @default(now()) @db.Timestamptz(6)
+// ============= Model Emissor ===============
+model Emissor {
+  id           String     @id @default(uuid()) @db.Uuid
+  nome         String
+  funcao       String
+  unidadeId    String     @db.Uuid
+  ativo        Boolean    @default(true)
+  criadoEm     DateTime   @default(now()) @db.Timestamptz(6)
 
-  usuario    Usuario  @relation(fields: [usuarioId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  unidade      Unidade    @relation(fields: [unidadeId], references: [id])
+  etiquetas    Etiqueta[]
 
-  @@index([entidade, entidadeId], map: "logs_auditoria_entidade_entidadeId_idx_8ba55fde")
-  @@index([usuarioId], map: "logs_auditoria_usuarioId_idx_5f01c7d6")
-  @@map("logs_auditoria")
+  @@index([unidadeId])
+  @@map("emissores")
+}
+
+// ============= Model CategoriaProduto ===============
+model CategoriaProduto {
+  id       String  @id @default(uuid()) @db.Uuid
+  nome     String  @unique
+  ativo    Boolean @default(true)
+
+  produtos ProdutoManipulado[]
+
+  @@map("categorias_produto")
+}
+
+// ============= Model ProdutoManipulado ===============
+model ProdutoManipulado {
+  id             String              @id @default(uuid()) @db.Uuid
+  nome           String
+  categoriaId    String?             @db.Uuid
+  alergenos      String[]            @default([])
+  ativo          Boolean             @default(true)
+  unidadeId      String              @db.Uuid
+  criadoEm       DateTime            @default(now()) @db.Timestamptz(6)
+  atualizadoEm   DateTime            @default(now()) @updatedAt @db.Timestamptz(6)
+
+  categoria      CategoriaProduto?   @relation(fields: [categoriaId], references: [id])
+  unidade        Unidade             @relation(fields: [unidadeId], references: [id])
+  etiquetas      Etiqueta[]
+
+  @@index([unidadeId])
+  @@map("produtos_manipulados")
+}
+
+// ============= Model RegraValidade ===============
+model RegraValidade {
+  id            String                @id @default(uuid()) @db.Uuid
+  condicao      CondicaoArmazenamento @unique   // 👈 uma regra por condição, sem produto
+  horasValidade Int
+  atualizadoEm  DateTime              @default(now()) @updatedAt @db.Timestamptz(6)
+}
+
+
+// ============= Model Dispositivo ===============
+model Dispositivo {
+  id            String     @id @default(uuid()) @db.Uuid
+  identificador String     @unique
+  nome          String?
+  unidadeId     String     @db.Uuid
+  ativo         Boolean    @default(true)   // 👈 novo campo
+  ultimoAcesso  DateTime?  @db.Timestamptz(6)
+  criadoEm      DateTime   @default(now()) @db.Timestamptz(6)
+
+  unidade       Unidade    @relation(fields: [unidadeId], references: [id])
+  etiquetas     Etiqueta[]
+
+  @@index([unidadeId])
+  @@map("dispositivos")
+}
+
+// ============= Model Etiqueta ===============
+model Etiqueta {
+  id                String                @id @default(uuid()) @db.Uuid
+  produtoId         String                @db.Uuid
+  emissorId         String?               @db.Uuid
+  usuarioGestaoId   String?               @db.Uuid
+  unidadeId         String                @db.Uuid
+  dispositivoId     String?               @db.Uuid
+
+  condicao          CondicaoArmazenamento
+  lote              String?
+  dataManipulacao   DateTime              @db.Timestamptz(6)
+  dataValidade      DateTime              @db.Timestamptz(6)
+  status            StatusEtiqueta        @default(VALIDA)
+
+  motivoReimpressao String?
+  reimpressaoDe     String?               @db.Uuid
+
+  criadoEm          DateTime              @default(now()) @db.Timestamptz(6)
+  sincronizadoEm    DateTime?             @db.Timestamptz(6)
+
+  produto           ProdutoManipulado     @relation(fields: [produtoId], references: [id])
+  emissor           Emissor?              @relation(fields: [emissorId], references: [id])
+  usuarioGestao     Usuario?              @relation("EmissorGestao", fields: [usuarioGestaoId], references: [id])
+  unidade           Unidade               @relation(fields: [unidadeId], references: [id])
+  dispositivo       Dispositivo?          @relation(fields: [dispositivoId], references: [id])
+
+  @@index([produtoId])
+  @@index([unidadeId])
+  @@index([status])
+  @@index([dataValidade])
+  @@map("etiquetas")
+}
+
+// ============= Model EventoAuditoria ===============
+model EventoAuditoria {
+  id             String        @id @default(uuid()) @db.Uuid
+  usuarioId      String?       @db.Uuid
+  papelNoMomento PapelUsuario?
+  tipoEvento     TipoEvento
+  entidade       String
+  entidadeId     String?
+  dadosAntes     Json?         @db.JsonB
+  dadosDepois    Json?         @db.JsonB
+  dispositivoId  String?       @db.Uuid
+  criadoEm       DateTime      @default(now()) @db.Timestamptz(6)
+
+  usuario        Usuario?      @relation(fields: [usuarioId], references: [id])
+
+  @@index([entidade, entidadeId])
+  @@index([usuarioId])
+  @@map("eventos_auditoria")
+}
+
+// ============= Model RefreshToken ===============
+model RefreshToken {
+  id        String   @id @default(uuid()) @db.Uuid
+  token     String   @unique
+  usuarioId String   @db.Uuid
+  expiraEm  DateTime @db.Timestamptz(6)
+  revogado  Boolean  @default(false)
+  criadoEm  DateTime @default(now()) @db.Timestamptz(6)
+
+  usuario   Usuario  @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+
+  @@index([usuarioId])
+  @@map("refresh_tokens")
 }

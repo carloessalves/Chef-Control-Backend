@@ -1,8 +1,11 @@
-// src/auth/dto/login.dto.ts
-import { IsString, Length } from 'class-validator';
+import { IsString, IsUUID, Length, Matches } from 'class-validator';
 
 export class LoginDto {
   @IsString()
-  @Length(4, 6)
+  @Length(6, 6, { message: 'O PIN deve conter exatamente 6 dígitos.' })
+  @Matches(/^\d{6}$/, { message: 'O PIN deve conter apenas números.' })
   pin: string;
+
+  @IsUUID()
+  unidadeId: string;
 }

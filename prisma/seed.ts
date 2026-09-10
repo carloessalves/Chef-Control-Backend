@@ -1,140 +1,62 @@
-import { PrismaClient } from '@prisma/client';
-import { randomUUID } from 'crypto';
+// prisma/seed.ts
+// prisma/seed.ts
+import { PrismaClient, PapelUsuario, CondicaoArmazenamento } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 
 const prisma = new PrismaClient();
 
-async function main() {
-  // Permissões
-  const permissoes = await Promise.all(
-    ['gerenciar_pedidos', 'gerenciar_produtos', 'gerenciar_usuarios', 'visualizar_relatorios'].map((nome) =>
-      prisma.permissao.create({
-        data: { id: randomUUID(), nome, descricao: `Permissão para ${nome.replace('_', ' ')}` },
-      })
-    )
-  );
+const SALT_ROUNDS = 10;
 
-  // Perfis
-  const perfilAdmin = await prisma.perfil.create({
+async function main() {
+  // Regras de validade padrão (uma por condição de armazenamento)
+  await prisma.regraValidade.createMany({
+  data: [
+    { condicao: CondicaoArmazenamento.RESFRIADO, horasValidade: 48 },
+    { condicao: CondicaoArmazenamento.CONGELADO, horasValidade: 720 },
+    { condicao: CondicaoArmazenamento.AMBIENTE, horasValidade: 24 },
+  ],
+  skipDuplicates: true,
+});
+  console.log('✅ Regras de validade padrão criadas');
+
+  // Evita recriar o ADMIN se o seed for rodado mais de uma vez
+  const adminExistente = await prisma.usuario.findFirst({
+    where: { papel: PapelUsuario.ADMIN },
+  });
+
+  if (adminExistente) {
+    console.log('⚠️  Já existe um usuário ADMIN. Seed abortado.');
+    return;
+  }
+
+  // Cria a unidade matriz (ajuste o nome conforme necessário)
+  const unidade = await prisma.unidade.create({
     data: {
-      id: randomUUID(),
-      nome: 'ADMIN',
-      descricao: 'Administrador do sistema',
-      atualizadoEm: new Date(),
-      perfilPermissoes: {
-        create: permissoes.map((p) => ({ permissaoId: p.id })),
-      },
+      nome: 'Unidade Matriz',
     },
   });
 
-  const perfilWaiter = await prisma.perfil.create({
-    data: { id: randomUUID(), nome: 'WAITER', descricao: 'Garçom', atualizadoEm: new Date() },
-  });
-
-  const perfilChef = await prisma.perfil.create({
-    data: { id: randomUUID(), nome: 'CHEF', descricao: 'Cozinheiro', atualizadoEm: new Date() },
-  });
-
-  // Usuários — PINs com hash bcrypt
-  const pinAdminHash = await bcrypt.hash('1234', 10);
-  const pinGarcomHash = await bcrypt.hash('5678', 10);
+  const pinPadrao = '123456'; // TROQUE o PIN após o primeiro login!
+  const pinHash = await bcrypt.hash(pinPadrao, SALT_ROUNDS);
 
   const admin = await prisma.usuario.create({
     data: {
-      id: randomUUID(),
-      nome: 'Renato Admin',
-      pin: pinAdminHash,
-      perfilId: perfilAdmin.id,
-      atualizadoEm: new Date(),
+      nome: 'Administrador',
+      funcao: 'Administrador do sistema',
+      papel: PapelUsuario.ADMIN,
+      pin: pinHash,
+      unidadeId: unidade.id,
     },
   });
 
-  const garcom = await prisma.usuario.create({
-    data: {
-      id: randomUUID(),
-      nome: 'João Garçom',
-      pin: pinGarcomHash,
-      perfilId: perfilWaiter.id,
-      atualizadoEm: new Date(),
-    },
-  });
-
-  // Categorias
-  const categoriaBebidas = await prisma.categoria.create({
-    data: { id: randomUUID(), nome: 'Bebidas', atualizadoEm: new Date() },
-  });
-
-  const categoriaPratos = await prisma.categoria.create({
-    data: { id: randomUUID(), nome: 'Pratos Principais', atualizadoEm: new Date() },
-  });
-
-  // Produtos
-  const suco = await prisma.produto.create({
-    data: {
-      id: randomUUID(),
-      nome: 'Suco de Laranja',
-      descricao: 'Suco natural 300ml',
-      preco: 8.5,
-      categoriaId: categoriaBebidas.id,
-      atualizadoEm: new Date(),
-    },
-  });
-
-  const feijoada = await prisma.produto.create({
-    data: {
-      id: randomUUID(),
-      nome: 'Feijoada Completa',
-      descricao: 'Feijoada com acompanhamentos',
-      preco: 35.9,
-      categoriaId: categoriaPratos.id,
-      atualizadoEm: new Date(),
-    },
-  });
-
-  // Mesas
-  const mesa1 = await prisma.mesa.create({
-    data: { id: randomUUID(), numero: 1, atualizadoEm: new Date() },
-  });
-
-  await prisma.mesa.create({
-    data: { id: randomUUID(), numero: 2, atualizadoEm: new Date() },
-  });
-
-  // Pedido de teste
-  const pedido = await prisma.pedido.create({
-    data: {
-      id: randomUUID(),
-      mesaId: mesa1.id,
-      usuarioId: garcom.id,
-      atualizadoEm: new Date(),
-      itens: {
-        create: [
-          {
-            id: randomUUID(),
-            produtoId: feijoada.id,
-            quantidade: 1,
-            precoUnitario: feijoada.preco,
-            atualizadoEm: new Date(),
-          },
-          {
-            id: randomUUID(),
-            produtoId: suco.id,
-            quantidade: 2,
-            precoUnitario: suco.preco,
-            atualizadoEm: new Date(),
-          },
-        ],
-      },
-    },
-  });
-
-  console.log('✅ Seed concluído com sucesso!');
-  console.log({ admin: admin.nome, garcom: garcom.nome, pedido: pedido.id });
+  console.log('✅ Unidade matriz criada:', unidade.id);
+  console.log('✅ Usuário ADMIN criado:', admin.id);
+  console.log(`   PIN inicial: ${pinPadrao} (troque assim que logar!)`);
 }
 
 main()
   .catch((e) => {
-    console.error('❌ Erro no seed:', e);
+    console.error('Erro ao executar o seed:', e);
     process.exit(1);
   })
   .finally(async () => {

@@ -1,32 +1,65 @@
-// src/usuarios/usuarios.controller.ts
-import { Controller, Get, Post, Body, Param, UseGuards } from '@nestjs/common';
-import { UsuariosService } from './usuarios.service.js';
-import { CreateUsuarioDto } from './dto/create-usuario.dto.js';
-import { JwtAuthGuard } from '../auth/jwt-auth.guard.js';
-import { PermissionsGuard } from '../rbac/permissions.guard.js';
-import { RequirePermissions } from '../rbac/permissions.decorator.js';
-import { PermissionAction } from '../rbac/permissions.enum.js';
+import {
+  Controller,
+  Get,
+  Post,
+  Patch,
+  Delete,
+  Param,
+  Body,
+} from '@nestjs/common';
+import { PapelUsuario } from '@prisma/client';
+import { UsuariosService } from './usuarios.service';
+import { CreateUsuarioDto } from './dto/create-usuario.dto';
+import { UpdateUsuarioDto } from './dto/update-usuario.dto';
+import { Roles } from '../auth/decorators/roles.decorator';
+import {
+  CurrentUser,
+  AuthenticatedUser,
+} from '../auth/decorators/current-user.decorator';
 
 @Controller('usuarios')
-@UseGuards(JwtAuthGuard, PermissionsGuard)
 export class UsuariosController {
-  constructor(private readonly service: UsuariosService) {}
+  constructor(private usuariosService: UsuariosService) {}
 
+  // Somente ADMIN cria usuários (evita autoatribuição de papel elevado)
+  @Roles(PapelUsuario.ADMIN)
   @Post()
-  @RequirePermissions(PermissionAction.MANAGE_USERS)
-  create(@Body() dto: CreateUsuarioDto) {
-    return this.service.create(dto);
+  create(
+    @Body() dto: CreateUsuarioDto,
+    @CurrentUser() requester: AuthenticatedUser,
+  ) {
+    return this.usuariosService.create(dto, requester);
   }
 
   @Get()
-  @RequirePermissions(PermissionAction.MANAGE_USERS)
-  findAll() {
-    return this.service.findAll();
+  findAll(@CurrentUser() requester: AuthenticatedUser) {
+    return this.usuariosService.findAll(requester);
   }
 
   @Get(':id')
-  @RequirePermissions(PermissionAction.MANAGE_USERS)
-  findOne(@Param('id') id: string) {
-    return this.service.findOne(id);
+  findOne(
+    @Param('id') id: string,
+    @CurrentUser() requester: AuthenticatedUser,
+  ) {
+    return this.usuariosService.findOne(id, requester);
+  }
+
+  @Roles(PapelUsuario.ADMIN)
+  @Patch(':id')
+  update(
+    @Param('id') id: string,
+    @Body() dto: UpdateUsuarioDto,
+    @CurrentUser() requester: AuthenticatedUser,
+  ) {
+    return this.usuariosService.update(id, dto, requester);
+  }
+
+  @Roles(PapelUsuario.ADMIN)
+  @Delete(':id')
+  remove(
+    @Param('id') id: string,
+    @CurrentUser() requester: AuthenticatedUser,
+  ) {
+    return this.usuariosService.remove(id, requester);
   }
 }

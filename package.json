@@ -1,6 +1,6 @@
 {
   "name": "chef-sys-backend",
-  "type": "module",
+  
   "version": "0.0.1",
   "description": "",
   "author": "",
@@ -14,11 +14,11 @@
   },
   "scripts": {
     "fix-esm": "ts-add-js-extension --dir=src",
-    "build": "npm run fix-esm && nest build",
+    "build": "nest build",
+    "start:dev": "nest start --watch",
     "deploy": "nest deploy",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
     "start": "nest start",
-    "start:dev": "nest start --watch",
     "start:debug": "nest start --debug --watch",
     "start:prod": "node dist/main",
     "lint": "oxlint src/ test/",

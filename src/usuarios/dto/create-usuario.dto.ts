@@ -1,15 +1,36 @@
-// src/usuarios/dto/create-usuario.dto.ts
-import { IsString, IsNotEmpty, Length, IsUUID } from 'class-validator';
+import {
+  IsString,
+  IsEnum,
+  IsUUID,
+  IsOptional,
+  IsBoolean,
+  Length,
+  Matches,
+} from 'class-validator';
+import { PapelUsuario } from '@prisma/client';
 
 export class CreateUsuarioDto {
   @IsString()
-  @IsNotEmpty()
   nome: string;
 
+  @IsOptional()
   @IsString()
-  @Length(4, 6)
-  pin: string; // será hasheado no service
+  funcao?: string;
+
+  @IsEnum(PapelUsuario, {
+    message: 'papel deve ser ADMIN, EMISSOR ou AUDITOR.',
+  })
+  papel: PapelUsuario;
+
+  @IsString()
+  @Length(6, 6, { message: 'O PIN deve conter exatamente 6 dígitos.' })
+  @Matches(/^\d{6}$/, { message: 'O PIN deve conter apenas números.' })
+  pin: string;
 
   @IsUUID()
-  perfilId: string;
+  unidadeId: string;
+
+  @IsOptional()
+  @IsBoolean()
+  ativo?: boolean;
 }

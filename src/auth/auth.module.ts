@@ -1,23 +1,23 @@
-import { Global, Module, forwardRef } from '@nestjs/common';
-import { JwtModule } from '@nestjs/jwt';
+import { Module } from '@nestjs/common';
 import { PassportModule } from '@nestjs/passport';
-import { AuthService } from './auth.service.js';
-import { AuthController } from './auth.controller.js';
-import { JwtStrategy } from './jwt.strategy.js';
-import { UsuariosModule } from '../usuarios/usuarios.module.js';
+import { JwtModule } from '@nestjs/jwt';
+import { AuthService } from './auth.service';
+import { AuthController } from './auth.controller';
+import { JwtStrategy } from './strategies/jwt.strategy';
+import { PrismaModule } from '../prisma/prisma.module';
 
-@Global()
 @Module({
   imports: [
-    forwardRef(() => UsuariosModule),
-    PassportModule.register({ defaultStrategy: 'jwt' }), // 👈 corrigido
+    PassportModule.register({ defaultStrategy: 'jwt' }),
     JwtModule.register({
-      secret: process.env.JWT_SECRET || 'chef-sys-secret-dev',
-      signOptions: { expiresIn: '8h' },
+      secret: process.env.JWT_SECRET || 'troque-por-um-segredo-forte',
+      signOptions: { expiresIn: '15m' },
     }),
+    PrismaModule,
   ],
   controllers: [AuthController],
   providers: [AuthService, JwtStrategy],
   exports: [PassportModule, JwtModule, AuthService],
 })
 export class AuthModule {}
+

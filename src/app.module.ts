@@ -1,18 +1,27 @@
 import { Module } from '@nestjs/common';
 import { PrismaModule } from './prisma/prisma.module.js';
-import { CategoriasModule } from './categorias/categorias.module.js';
-import { ProdutosModule } from './produtos/produtos.module.js';
+import { UnidadesModule } from './unidades/unidades.module.js';
 import { UsuariosModule } from './usuarios/usuarios.module.js';
+import { EmissoresModule } from './emissores/emissores.module.js';
+import { CategoriasProdutoModule } from './categorias-produto/categorias-produto.module.js';
+import { APP_GUARD } from '@nestjs/core';
 import { AuthModule } from './auth/auth.module.js';
-import { AuditModule } from './audit/audit.module.js';
+import { JwtAuthGuard } from './auth/guards/jwt-auth.guard.js';
+import { RolesGuard } from './auth/guards/roles.guard.js';
+import { ProdutosManipuladosModule } from './produtos-manipulados/produtos-manipulados.module.js';
+import { DispositivosModule } from './dispositivos/dispositivos.module.js';
+import { RegrasValidadeModule } from './regras-validade/regras-validade.module.js';
+import { SharedAuthModule } from './auth/shared-auth.module.js';
+
+
 
 @Module({
-  imports: [
-    PrismaModule,
-    CategoriasModule,
-    ProdutosModule,
-    UsuariosModule,
-    AuthModule,
+  imports: [PrismaModule, UnidadesModule, EmissoresModule, CategoriasProdutoModule,
+    AuthModule, UsuariosModule, ProdutosManipuladosModule, DispositivosModule,
+  RegrasValidadeModule,  SharedAuthModule],
+  providers: [
+    { provide: APP_GUARD, useClass: JwtAuthGuard },
+    { provide: APP_GUARD, useClass: RolesGuard },
   ],
 })
 export class AppModule {}
