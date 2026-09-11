@@ -20,12 +20,14 @@ import { RequestWithDispositivo } from '../dispositivos/request-with-dispositivo
 import { ProdutosManipuladosService } from './produtos-manipulados.service';
 import { CreateProdutoManipuladoDto } from './dto/create-produto-manipulado.dto';
 import { UpdateProdutoManipuladoDto } from './dto/update-produto-manipulado.dto';
+import { Public } from '../auth/decorators/public.decorator';
 
 @Controller('produtos-manipulados')
 export class ProdutosManipuladosController {
   constructor(private readonly service: ProdutosManipuladosService) {}
 
   // Fluxo operacional (tela "Produtos", sem PIN) — exige tablet pareado.
+  @Public()
   @UseGuards(DispositivoGuard)
   @Post()
   create(
@@ -35,12 +37,14 @@ export class ProdutosManipuladosController {
     return this.service.create(dto, req.dispositivo.unidadeId);
   }
 
+  @Public()
   @UseGuards(DispositivoGuard)
   @Get()
   findAll(@Req() req: RequestWithDispositivo) {
     return this.service.findAll(req.dispositivo.unidadeId);
   }
 
+  @Public()
   @UseGuards(DispositivoGuard)
   @Get(':id')
   findOne(
@@ -50,6 +54,7 @@ export class ProdutosManipuladosController {
     return this.service.findOne(id, req.dispositivo.unidadeId);
   }
 
+  @Public()
   @UseGuards(DispositivoGuard)
   @Patch(':id')
   update(

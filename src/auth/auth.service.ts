@@ -1,8 +1,4 @@
-import {
-  Injectable,
-  UnauthorizedException,
-  ForbiddenException,
-} from '@nestjs/common';
+import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../prisma/prisma.service';
@@ -21,87 +17,62 @@ export class AuthService {
     return bcrypt.hash(pin, SALT_ROUNDS);
   }
 
-  async login(dto: LoginDto) {
-    const usuario = await this.prisma.usuario.findFirst({
-      where: { unidadeId: dto.unidadeId },
+  // Lista de usuários da unidade do dispositivo, para a tela de seleção
+  // antes do PIN (usuarios, relatorios, auditoria).
+  async listarUsuariosDaUnidade(unidadeId: string) {
+    return this.prisma.usuario.findMany({
+      where: { unidadeId, ativo: true },
+      select: { id: true, nome: true, funcao: true, papel: true },
+      orderBy: { nome: 'asc' },
     });
-
-    // Busca todos os usuários da unidade e compara o PIN com bcrypt
-    // (não dá para buscar direto pelo PIN pois ele está hasheado)
-    const usuariosDaUnidade = await this.prisma.usuario.findMany({
-      where: { unidadeId: dto.unidadeId, ativo: true },
-    });
-
-    let usuarioAutenticado = null;
-    for (const u of usuariosDaUnidade) {
-      const pinValido = await bcrypt.compare(dto.pin, u.pin);
-      if (pinValido) {
-        usuarioAutenticado = u;
-        break;
-      }
-    }
-
-    if (!usuarioAutenticado) {
-      throw new UnauthorizedException('PIN ou unidade inválidos.');
-    }
-
-    return this.gerarTokens(usuarioAutenticado);
   }
 
-  async refresh(refreshToken: string) {
-    let payload: any;
-
-    try {
-      payload = this.jwtService.verify(refreshToken, {
-        secret: process.env.JWT_REFRESH_SECRET,
-      });
-    } catch {
-      throw new UnauthorizedException('Refresh token inválido ou expirado.');
-    }
-
+  async login(dto: LoginDto, unidadeId: string) {
     const usuario = await this.prisma.usuario.findUnique({
-      where: { id: payload.sub },
+      where: { id: dto.usuarioId },
     });
 
-    if (!usuario || !usuario.ativo) {
-      throw new ForbiddenException('Usuário inválido ou inativo.');
+    // Garante que o usuário selecionado pertence à mesma unidade do
+    // dispositivo que está fazendo a requisição.
+    if (!usuario || !usuario.ativo || usuario.unidadeId !== unidadeId) {
+      throw new UnauthorizedException('Usuário inválido ou inativo.');
     }
 
-    return this.gerarTokens(usuario);
+    const pinValido = await bcrypt.compare(dto.pin, usuario.pin);
+    if (!pinValido) {
+      throw new UnauthorizedException('PIN inválido.');
+    }
+
+    return this.gerarToken(usuario);
   }
 
-  private gerarTokens(usuario: {
-  id: string;
-  papel: string;
-  unidadeId: string;
-  nome: string;
-    }) {
-     const payload = {
-        sub: usuario.id,
-        papel: usuario.papel,
-        unidadeId: usuario.unidadeId,
-        nome: usuario.nome,
+  private gerarToken(usuario: {
+    id: string;
+    papel: string;
+    unidadeId: string;
+    nome: string;
+  }) {
+    const payload = {
+      sub: usuario.id,
+      papel: usuario.papel,
+      unidadeId: usuario.unidadeId,
+      nome: usuario.nome,
     };
 
     const accessToken = this.jwtService.sign(payload, {
-     secret: process.env.JWT_SECRET,
-     expiresIn: (process.env.JWT_ACCESS_EXPIRATION || '30m') as any,
+      secret: process.env.JWT_SECRET,
+      expiresIn: (process.env.JWT_ACCESS_EXPIRATION || '2h') as any,
     });
 
-    const refreshToken = this.jwtService.sign(payload, {
-     secret: process.env.JWT_REFRESH_SECRET,
-     expiresIn: (process.env.JWT_REFRESH_EXPIRATION || '7d') as any,
-    });
+    return {
+      accessToken,
+      usuario: {
+        id: usuario.id,
+        nome: usuario.nome,
+        papel: usuario.papel,
+        unidadeId: usuario.unidadeId,
+      },
+    };
+  }
+}
 
-  return {
-    accessToken,
-    refreshToken,
-    usuario: {
-      id: usuario.id,
-      nome: usuario.nome,
-      papel: usuario.papel,
-      unidadeId: usuario.unidadeId,
-    },
-  };
-}
-}

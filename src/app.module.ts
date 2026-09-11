@@ -12,14 +12,26 @@ import { ProdutosManipuladosModule } from './produtos-manipulados/produtos-manip
 import { DispositivosModule } from './dispositivos/dispositivos.module.js';
 import { RegrasValidadeModule } from './regras-validade/regras-validade.module.js';
 import { SharedAuthModule } from './auth/shared-auth.module.js';
-
-
+import { ScheduleModule } from '@nestjs/schedule';
+import { EtiquetasModule } from './etiquetas/etiquetas.module';
+import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 
 @Module({
-  imports: [PrismaModule, UnidadesModule, EmissoresModule, CategoriasProdutoModule,
+  imports: [
+    PrismaModule, UnidadesModule, EmissoresModule, CategoriasProdutoModule,
     AuthModule, UsuariosModule, ProdutosManipuladosModule, DispositivosModule,
-  RegrasValidadeModule,  SharedAuthModule],
+    RegrasValidadeModule, SharedAuthModule, ScheduleModule.forRoot(),
+    EtiquetasModule,
+    ThrottlerModule.forRoot([
+      {
+        ttl: 60000, // 60 segundos
+        limit: 20,  // limite padrão global (rotas sem @Throttle específico)
+      },
+    ]),
+  ],
   providers: [
+    // Ordem importa: Throttler roda primeiro, depois auth, depois roles
+    { provide: APP_GUARD, useClass: ThrottlerGuard },
     { provide: APP_GUARD, useClass: JwtAuthGuard },
     { provide: APP_GUARD, useClass: RolesGuard },
   ],

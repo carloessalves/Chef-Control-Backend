@@ -44,6 +44,15 @@ export class DispositivoGuard implements CanActivate {
       );
     }
 
+    // Atualiza o último acesso de forma assíncrona, sem bloquear a request
+    // (fire-and-forget: se falhar, não impede o uso do dispositivo)
+    this.prisma.dispositivo
+      .update({
+        where: { id: dispositivo.id },
+        data: { ultimoAcesso: new Date() },
+      })
+      .catch(() => {});
+
     // Disponibiliza o dispositivo (com unidade) para os controllers/services
     request.dispositivo = dispositivo;
 

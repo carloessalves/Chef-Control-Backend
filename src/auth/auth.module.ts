@@ -9,9 +9,19 @@ import { PrismaModule } from '../prisma/prisma.module';
 @Module({
   imports: [
     PassportModule.register({ defaultStrategy: 'jwt' }),
-    JwtModule.register({
-      secret: process.env.JWT_SECRET || 'troque-por-um-segredo-forte',
-      signOptions: { expiresIn: '15m' },
+    JwtModule.registerAsync({
+      useFactory: () => {
+        const secret = process.env.JWT_SECRET;
+        if (!secret) {
+          throw new Error('JWT_SECRET não definido no .env');
+        }
+        return {
+          secret,
+          signOptions: {
+            expiresIn: (process.env.JWT_ACCESS_EXPIRATION || '2h') as any,
+          },
+        };
+      },
     }),
     PrismaModule,
   ],
@@ -20,4 +30,3 @@ import { PrismaModule } from '../prisma/prisma.module';
   exports: [PassportModule, JwtModule, AuthService],
 })
 export class AuthModule {}
-

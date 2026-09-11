@@ -10,11 +10,14 @@ import {
   ParseBoolPipe,
   DefaultValuePipe,
 } from '@nestjs/common';
+import { PapelUsuario } from '@prisma/client';
+import { Roles } from '../auth/decorators/roles.decorator.js';
 import { UnidadesService } from './unidades.service.js';
 import { CreateUnidadeDto } from './dto/create-unidade.dto.js';
 import { UpdateUnidadeDto } from './dto/update-unidade.dto.js';
 
 @Controller('unidades')
+@Roles(PapelUsuario.ADMIN)
 export class UnidadesController {
   constructor(private readonly unidadesService: UnidadesService) {}
 

@@ -24,7 +24,7 @@ enum StatusEtiqueta {
   VALIDA
   VENCIDA
   DESCARTADA
-  CONSUMIDO
+  CONSUMIDA
 }
 
 enum TipoEvento {
@@ -69,7 +69,6 @@ model Usuario {
   unidade           Unidade           @relation(fields: [unidadeId], references: [id])
   etiquetasEmitidas Etiqueta[]        @relation("EmissorGestao")
   eventos           EventoAuditoria[]
-  refreshTokens     RefreshToken[]
 
   @@unique([unidadeId, pin])
   @@index([unidadeId])
@@ -125,11 +124,10 @@ model ProdutoManipulado {
 // ============= Model RegraValidade ===============
 model RegraValidade {
   id            String                @id @default(uuid()) @db.Uuid
-  condicao      CondicaoArmazenamento @unique   // 👈 uma regra por condição, sem produto
+  condicao      CondicaoArmazenamento @unique
   horasValidade Int
   atualizadoEm  DateTime              @default(now()) @updatedAt @db.Timestamptz(6)
 }
-
 
 // ============= Model Dispositivo ===============
 model Dispositivo {
@@ -137,7 +135,7 @@ model Dispositivo {
   identificador String     @unique
   nome          String?
   unidadeId     String     @db.Uuid
-  ativo         Boolean    @default(true)   // 👈 novo campo
+  ativo         Boolean    @default(true)
   ultimoAcesso  DateTime?  @db.Timestamptz(6)
   criadoEm      DateTime   @default(now()) @db.Timestamptz(6)
 
@@ -152,10 +150,10 @@ model Dispositivo {
 model Etiqueta {
   id                String                @id @default(uuid()) @db.Uuid
   produtoId         String                @db.Uuid
-  emissorId         String?               @db.Uuid
+  emissorId         String                @db.Uuid
   usuarioGestaoId   String?               @db.Uuid
   unidadeId         String                @db.Uuid
-  dispositivoId     String?               @db.Uuid
+  dispositivoId     String                @db.Uuid
 
   condicao          CondicaoArmazenamento
   lote              String?
@@ -164,16 +162,16 @@ model Etiqueta {
   status            StatusEtiqueta        @default(VALIDA)
 
   motivoReimpressao String?
-  reimpressaoDe     String?               @db.Uuid
+  motivoDescarte    String?
 
   criadoEm          DateTime              @default(now()) @db.Timestamptz(6)
   sincronizadoEm    DateTime?             @db.Timestamptz(6)
 
   produto           ProdutoManipulado     @relation(fields: [produtoId], references: [id])
-  emissor           Emissor?              @relation(fields: [emissorId], references: [id])
+  emissor            Emissor              @relation(fields: [emissorId], references: [id])
   usuarioGestao     Usuario?              @relation("EmissorGestao", fields: [usuarioGestaoId], references: [id])
   unidade           Unidade               @relation(fields: [unidadeId], references: [id])
-  dispositivo       Dispositivo?          @relation(fields: [dispositivoId], references: [id])
+  dispositivo       Dispositivo           @relation(fields: [dispositivoId], references: [id])
 
   @@index([produtoId])
   @@index([unidadeId])
@@ -200,19 +198,4 @@ model EventoAuditoria {
   @@index([entidade, entidadeId])
   @@index([usuarioId])
   @@map("eventos_auditoria")
-}
-
-// ============= Model RefreshToken ===============
-model RefreshToken {
-  id        String   @id @default(uuid()) @db.Uuid
-  token     String   @unique
-  usuarioId String   @db.Uuid
-  expiraEm  DateTime @db.Timestamptz(6)
-  revogado  Boolean  @default(false)
-  criadoEm  DateTime @default(now()) @db.Timestamptz(6)
-
-  usuario   Usuario  @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
-
-  @@index([usuarioId])
-  @@map("refresh_tokens")
 }

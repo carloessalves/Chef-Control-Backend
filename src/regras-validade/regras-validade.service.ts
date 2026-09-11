@@ -1,10 +1,14 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { CondicaoArmazenamento, PapelUsuario } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { AuditoriaService } from '../auditoria/auditoria.service';
 
 @Injectable()
 export class RegrasValidadeService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly auditoria: AuditoriaService,
+  ) {}
 
   listar() {
     return this.prisma.regraValidade.findMany({
@@ -28,13 +32,16 @@ export class RegrasValidadeService {
       );
     }
 
-    const [regraDepois] = await this.prisma.$transaction([
-      this.prisma.regraValidade.update({
+    // Transação interativa: permite reutilizar o AuditoriaService
+    // passando o client transacional (tx) para o registro.
+    const regraDepois = await this.prisma.$transaction(async (tx) => {
+      const atualizada = await tx.regraValidade.update({
         where: { condicao },
         data: { horasValidade },
-      }),
-      this.prisma.eventoAuditoria.create({
-        data: {
+      });
+
+      await this.auditoria.registrar(
+        {
           usuarioId,
           papelNoMomento,
           tipoEvento: 'UPDATE',
@@ -43,8 +50,11 @@ export class RegrasValidadeService {
           dadosAntes: { horasValidade: regraAntes.horasValidade },
           dadosDepois: { horasValidade },
         },
-      }),
-    ]);
+        tx,
+      );
+
+      return atualizada;
+    });
 
     return regraDepois;
   }

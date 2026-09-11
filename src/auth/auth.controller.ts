@@ -1,24 +1,29 @@
-import { Controller, Post, Body, HttpCode, HttpStatus } from '@nestjs/common';
+import { Controller, Get, Post, Body, HttpCode, HttpStatus, Req, UseGuards } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import { AuthService } from './auth.service';
 import { LoginDto } from './dto/login.dto';
-import { RefreshDto } from './dto/refresh.dto';
 import { Public } from './decorators/public.decorator';
+import { DispositivoGuard } from '../dispositivos/dispositivo.guard';
+import { RequestWithDispositivo } from '../dispositivos/request-with-dispositivo';
 
 @Controller('auth')
 export class AuthController {
   constructor(private authService: AuthService) {}
 
   @Public()
-  @Post('login')
-  @HttpCode(HttpStatus.OK)
-  login(@Body() dto: LoginDto) {
-    return this.authService.login(dto);
+  @UseGuards(DispositivoGuard)
+  @Get('usuarios')
+  listarUsuarios(@Req() req: RequestWithDispositivo) {
+    return this.authService.listarUsuariosDaUnidade(req.dispositivo.unidadeId);
   }
 
+  // Limite específico: 5 tentativas por minuto por IP, para mitigar brute-force de PIN
   @Public()
-  @Post('refresh')
+  @UseGuards(DispositivoGuard)
+  @Throttle({ default: { limit: 5, ttl: 60000 } })
+  @Post('login')
   @HttpCode(HttpStatus.OK)
-  refresh(@Body() dto: RefreshDto) {
-    return this.authService.refresh(dto.refreshToken);
+  login(@Body() dto: LoginDto, @Req() req: RequestWithDispositivo) {
+    return this.authService.login(dto, req.dispositivo.unidadeId);
   }
 }

@@ -36,7 +36,7 @@ async function main() {
     },
   });
 
-  const pinPadrao = '123456'; // TROQUE o PIN após o primeiro login!
+  const pinPadrao = '1234'; // TROQUE o PIN após o primeiro login!
   const pinHash = await bcrypt.hash(pinPadrao, SALT_ROUNDS);
 
   const admin = await prisma.usuario.create({
@@ -49,6 +49,16 @@ async function main() {
     },
   });
 
+  const dispositivo = await prisma.dispositivo.create({
+  data: {
+      identificador: 'tablet-dev-001', // valor que você vai usar no header x-device-id
+      nome: 'Tablet de Desenvolvimento',
+      unidadeId: unidade.id,
+      ativo: true,
+    },
+  });
+
+  console.log('✅ Dispositivo de dev criado:', dispositivo.identificador);
   console.log('✅ Unidade matriz criada:', unidade.id);
   console.log('✅ Usuário ADMIN criado:', admin.id);
   console.log(`   PIN inicial: ${pinPadrao} (troque assim que logar!)`);

@@ -90,13 +90,14 @@ export class ProdutosManipuladosService {
   // ---------- Helpers ----------
 
   private async validarCategoria(categoriaId: string) {
-    const categoria = await this.prisma.categoriaProduto.findUnique({
-      where: { id: categoriaId },
+    const categoria = await this.prisma.categoriaProduto.findFirst({
+      where: { id: categoriaId, ativo: true },
     });
 
     if (!categoria) {
-      throw new NotFoundException('Categoria de produto não encontrada.');
+      throw new NotFoundException(
+        'Categoria de produto não encontrada ou inativa.',
+      );
     }
   }
 }
-

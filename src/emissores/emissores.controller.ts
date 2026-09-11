@@ -19,6 +19,7 @@ import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { DispositivoGuard } from '../dispositivos/dispositivo.guard';
 import { RequestWithDispositivo } from '../dispositivos/request-with-dispositivo.js';
+import { Public } from '../auth/decorators/public.decorator';
 
 @Controller('emissores')
 export class EmissoresController {
@@ -26,6 +27,7 @@ export class EmissoresController {
 
   // Fluxo operacional (tela de identificação do emissor) — sem login,
   // mas exige tablet pareado (x-device-id válido).
+  @Public()
   @UseGuards(DispositivoGuard)
   @Post()
   create(
@@ -35,12 +37,14 @@ export class EmissoresController {
     return this.emissoresService.create(dto, req.dispositivo.unidadeId);
   }
 
+  @Public()
   @UseGuards(DispositivoGuard)
   @Get()
   findAll(@Req() req: RequestWithDispositivo) {
     return this.emissoresService.findAll(req.dispositivo.unidadeId);
   }
 
+  @Public()
   @UseGuards(DispositivoGuard)
   @Get(':id')
   findOne(

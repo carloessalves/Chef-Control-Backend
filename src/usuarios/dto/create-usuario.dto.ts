@@ -23,8 +23,8 @@ export class CreateUsuarioDto {
   papel: PapelUsuario;
 
   @IsString()
-  @Length(6, 6, { message: 'O PIN deve conter exatamente 6 dígitos.' })
-  @Matches(/^\d{6}$/, { message: 'O PIN deve conter apenas números.' })
+  @Length(4, 4, { message: 'O PIN deve conter exatamente 4 dígitos.' })
+  @Matches(/^\d{4}$/, { message: 'O PIN deve conter apenas números.' })
   pin: string;
 
   @IsUUID()
