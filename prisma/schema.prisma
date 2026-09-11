@@ -39,7 +39,7 @@ enum TipoEvento {
 // ============= Model Unidade ===============
 model Unidade {
   id           String     @id @default(uuid()) @db.Uuid
-  nome         String
+  nome         String     @unique
   cnpj         String?
   ativo        Boolean    @default(true)
   criadoEm     DateTime   @default(now()) @db.Timestamptz(6)
