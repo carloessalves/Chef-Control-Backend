@@ -1,4 +1,6 @@
 import { IsString, IsOptional, IsNotEmpty, MaxLength } from 'class-validator';
+import { Transform } from 'class-transformer';
+import { IsCnpj } from '../../common/validators/is-cnpj.validator.js';
 
 export class CreateUnidadeDto {
   @IsString()
@@ -6,8 +8,11 @@ export class CreateUnidadeDto {
   @MaxLength(120)
   nome: string;
 
-  @IsString()
   @IsOptional()
-  @MaxLength(18) // formato 00.000.000/0001-00
+  @Transform(({ value }) =>
+    typeof value === 'string' ? value.replace(/\D/g, '') : value,
+  )
+  @IsString()
+  @IsCnpj()
   cnpj?: string;
 }

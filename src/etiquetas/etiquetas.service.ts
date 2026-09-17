@@ -1,9 +1,10 @@
+// src/etiquetas/etiquetas.service.ts
 import {
   Injectable,
   NotFoundException,
   BadRequestException,
 } from '@nestjs/common';
-import { PrismaService } from '../prisma/prisma.service.js';
+import { EtiquetasRepository } from './etiquetas.repository.js';
 import { AuditoriaService } from '../auditoria/auditoria.service.js';
 import { CriarEtiquetaDto } from './dto/criar-etiqueta.dto.js';
 import { ReimprimirEtiquetaDto } from './dto/reimprimir-etiqueta.dto.js';
@@ -15,55 +16,35 @@ import { StatusEtiqueta, TipoEvento, Prisma } from '@prisma/client';
 @Injectable()
 export class EtiquetasService {
   constructor(
-    private readonly prisma: PrismaService,
+    private readonly etiquetasRepo: EtiquetasRepository,
     private readonly auditoria: AuditoriaService,
   ) {}
 
   async criar(dto: CriarEtiquetaDto, dispositivo: AuthenticatedDevice) {
-    const produto = await this.prisma.produtoManipulado.findFirst({
-      where: { id: dto.produtoId, unidadeId: dispositivo.unidadeId, ativo: true },
-    });
-    if (!produto) {
-      throw new NotFoundException('Produto não encontrado ou inativo nesta unidade.');
-    }
-
-    const emissor = await this.prisma.emissor.findFirst({
-      where: { id: dto.emissorId, unidadeId: dispositivo.unidadeId, ativo: true },
-    });
-    if (!emissor) {
-      throw new NotFoundException('Emissor não encontrado ou inativo nesta unidade.');
-    }
-
-    const regra = await this.prisma.regraValidade.findUnique({
-      where: { condicao: dto.condicao },
-    });
-    if (!regra) {
-      throw new BadRequestException(
-        `Não existe regra de validade cadastrada para a condição ${dto.condicao}.`,
-      );
-    }
+    const produto = await this.validarProdutoAtivo(dto.produtoId, dispositivo.unidadeId);
+    const emissor = await this.validarEmissorAtivo(dto.emissorId, dispositivo.unidadeId);
+    const regra = await this.validarRegraValidade(dto.condicao);
 
     const dataManipulacao = dto.dataManipulacao ? new Date(dto.dataManipulacao) : new Date();
     const dataValidade = new Date(
       dataManipulacao.getTime() + regra.horasValidade * 60 * 60 * 1000,
     );
 
-    // Criação da etiqueta + registro de auditoria são atômicos:
-    // se a auditoria falhar, a etiqueta também não é criada.
-    return this.prisma.$transaction(async (tx) => {
-      const etiqueta = await tx.etiqueta.create({
-        data: {
-          produtoId: dto.produtoId,
-          emissorId: dto.emissorId,
-          unidadeId: dispositivo.unidadeId,
-          dispositivoId: dispositivo.id,
+    return this.etiquetasRepo.executarEmTransacao(async (tx) => {
+      const etiqueta = await this.etiquetasRepo.criar(
+        {
+          produto: { connect: { id: dto.produtoId } },
+          emissor: { connect: { id: dto.emissorId } },
+          unidade: { connect: { id: dispositivo.unidadeId } },
+          dispositivo: { connect: { id: dispositivo.id } },
           condicao: dto.condicao,
           lote: dto.lote,
           dataManipulacao,
           dataValidade,
           status: StatusEtiqueta.VALIDA,
         },
-      });
+        tx,
+      );
 
       await this.auditoria.registrar(
         {
@@ -80,6 +61,36 @@ export class EtiquetasService {
     });
   }
 
+  // ---------- Helpers de validação ----------
+
+  private async validarProdutoAtivo(produtoId: string, unidadeId: string) {
+    const produto = await this.etiquetasRepo.encontrarProdutoAtivo(produtoId, unidadeId);
+    if (!produto) {
+      throw new NotFoundException('Produto não encontrado ou inativo nesta unidade.');
+    }
+    return produto;
+  }
+
+  private async validarEmissorAtivo(emissorId: string, unidadeId: string) {
+    const emissor = await this.etiquetasRepo.encontrarEmissorAtivo(emissorId, unidadeId);
+    if (!emissor) {
+      throw new NotFoundException('Emissor não encontrado ou inativo nesta unidade.');
+    }
+    return emissor;
+  }
+
+  private async validarRegraValidade(condicao: CriarEtiquetaDto['condicao']) {
+    const regra = await this.etiquetasRepo.encontrarRegraValidade(condicao);
+    if (!regra) {
+      throw new BadRequestException(
+        `Não existe regra de validade cadastrada para a condição ${condicao}.`,
+      );
+    }
+    return regra;
+  }
+
+  // ---------- Reimpressão ----------
+
   async reimprimir(
     id: string,
     dto: ReimprimirEtiquetaDto,
@@ -93,11 +104,21 @@ export class EtiquetasService {
       );
     }
 
-    return this.prisma.$transaction(async (tx) => {
-      const etiquetaAtualizada = await tx.etiqueta.update({
-        where: { id },
-        data: { motivoReimpressao: dto.motivoReimpressao },
-      });
+    return this.etiquetasRepo.executarEmTransacao(async (tx) => {
+      const historico = await this.etiquetasRepo.criarHistoricoReimpressao(
+        {
+          etiquetaId: id,
+          motivo: dto.motivoReimpressao,
+          dispositivoId: dispositivo.id,
+        },
+        tx,
+      );
+
+      const etiquetaAtualizada = await this.etiquetasRepo.atualizar(
+        id,
+        { motivoReimpressao: dto.motivoReimpressao },
+        tx,
+      );
 
       await this.auditoria.registrar(
         {
@@ -111,9 +132,16 @@ export class EtiquetasService {
         tx,
       );
 
-      return etiquetaAtualizada;
+      return { etiqueta: etiquetaAtualizada, historico };
     });
   }
+
+  async listarHistoricoReimpressoes(id: string, unidadeId: string) {
+    await this.buscarOuFalhar(id, unidadeId);
+    return this.etiquetasRepo.listarHistoricoReimpressoes(id);
+  }
+
+  // ---------- Atualização de status ----------
 
   async atualizarStatus(
     id: string,
@@ -128,7 +156,7 @@ export class EtiquetasService {
       );
     }
 
-    return this.prisma.$transaction(async (tx) => {
+    return this.etiquetasRepo.executarEmTransacao(async (tx) => {
       const dataAtualizacao: Prisma.EtiquetaUpdateInput = {
         status: dto.status,
       };
@@ -137,10 +165,7 @@ export class EtiquetasService {
         dataAtualizacao.motivoDescarte = dto.motivoDescarte;
       }
 
-      const etiquetaAtualizada = await tx.etiqueta.update({
-        where: { id },
-        data: dataAtualizacao,
-      });
+      const etiquetaAtualizada = await this.etiquetasRepo.atualizar(id, dataAtualizacao, tx);
 
       await this.auditoria.registrar(
         {
@@ -158,6 +183,8 @@ export class EtiquetasService {
     });
   }
 
+  // ---------- Listagem e busca ----------
+
   async listar(unidadeId: string, filtros: ListarEtiquetasDto) {
     const where: Prisma.EtiquetaWhereInput = { unidadeId };
 
@@ -171,11 +198,7 @@ export class EtiquetasService {
       };
     }
 
-    return this.prisma.etiqueta.findMany({
-      where,
-      include: { produto: true, emissor: true },
-      orderBy: { criadoEm: 'desc' },
-    });
+    return this.etiquetasRepo.listar(where);
   }
 
   async buscarPorId(id: string, unidadeId: string) {
@@ -183,9 +206,7 @@ export class EtiquetasService {
   }
 
   private async buscarOuFalhar(id: string, unidadeId: string) {
-    const etiqueta = await this.prisma.etiqueta.findFirst({
-      where: { id, unidadeId },
-    });
+    const etiqueta = await this.etiquetasRepo.encontrarPorIdEUnidade(id, unidadeId);
     if (!etiqueta) {
       throw new NotFoundException('Etiqueta não encontrada.');
     }
@@ -193,13 +214,32 @@ export class EtiquetasService {
   }
 
   async marcarVencidas(): Promise<number> {
-    const resultado = await this.prisma.etiqueta.updateMany({
-      where: {
-        status: StatusEtiqueta.VALIDA,
-        dataValidade: { lt: new Date() },
-      },
-      data: { status: StatusEtiqueta.VENCIDA },
-    });
+    const resultado = await this.etiquetasRepo.marcarVencidas();
     return resultado.count;
+  }
+
+  // ---------- Consulta pública (via QR) ----------
+
+  /**
+   * Consulta pública — sem autenticação, acessada ao escanear o QR físico.
+   * Retorna apenas dados seguros para exibição, nunca informações internas
+   * (dispositivoId, emissorId, unidadeId, motivos de reimpressão/descarte, etc.).
+   */
+  async consultaPublica(id: string) {
+    const etiqueta = await this.etiquetasRepo.encontrarPublicaPorId(id);
+    if (!etiqueta) {
+      throw new NotFoundException('Etiqueta não encontrada.');
+    }
+
+    return {
+      produto: etiqueta.produto.nome,
+      alergenos: etiqueta.produto.alergenos,
+      condicao: etiqueta.condicao,
+      lote: etiqueta.lote,
+      dataManipulacao: etiqueta.dataManipulacao,
+      dataValidade: etiqueta.dataValidade,
+      status: etiqueta.status,
+      responsavel: etiqueta.emissor.nome,
+    };
   }
 }

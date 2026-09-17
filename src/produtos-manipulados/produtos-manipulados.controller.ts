@@ -1,32 +1,38 @@
+// src/produtos-manipulados/produtos-manipulados.controller.ts
+
 import {
   Controller,
   Get,
   Post,
   Patch,
   Delete,
-  Param,
   Body,
+  Param,
+  Query,
   Req,
   UseGuards,
 } from '@nestjs/common';
-import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
-import { RolesGuard } from '../auth/guards/roles.guard';
-import { Roles } from '../auth/decorators/roles.decorator';
-import { CurrentUser } from '../auth/decorators/current-user.decorator';
-import { AuthenticatedUser } from '../auth/decorators/current-user.decorator';
 import { PapelUsuario } from '@prisma/client';
-import { DispositivoGuard } from '../dispositivos/dispositivo.guard';
+import { ProdutosManipuladosService } from './produtos-manipulados.service.js';
+import { CreateProdutoManipuladoDto } from './dto/create-produto-manipulado.dto.js';
+import { UpdateProdutoManipuladoDto } from './dto/update-produto-manipulado.dto.js';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard.js';
+import { RolesGuard } from '../auth/guards/roles.guard.js';
+import { Roles } from '../auth/decorators/roles.decorator.js';
+import {
+  CurrentUser,
+  AuthenticatedUser,
+} from '../auth/decorators/current-user.decorator.js';
+import { Public } from '../auth/decorators/public.decorator.js';
+import { DispositivoGuard } from '../dispositivos/dispositivo.guard.js';
 import { RequestWithDispositivo } from '../dispositivos/request-with-dispositivo.js';
-import { ProdutosManipuladosService } from './produtos-manipulados.service';
-import { CreateProdutoManipuladoDto } from './dto/create-produto-manipulado.dto';
-import { UpdateProdutoManipuladoDto } from './dto/update-produto-manipulado.dto';
-import { Public } from '../auth/decorators/public.decorator';
 
 @Controller('produtos-manipulados')
 export class ProdutosManipuladosController {
   constructor(private readonly service: ProdutosManipuladosService) {}
 
-  // Fluxo operacional (tela "Produtos", sem PIN) — exige tablet pareado.
+  // ---------- Fluxo operacional (tela "Produtos", sem login) — tablet pareado ----------
+
   @Public()
   @UseGuards(DispositivoGuard)
   @Post()
@@ -34,7 +40,9 @@ export class ProdutosManipuladosController {
     @Body() dto: CreateProdutoManipuladoDto,
     @Req() req: RequestWithDispositivo,
   ) {
-    return this.service.create(dto, req.dispositivo.unidadeId);
+    return this.service.create(dto, req.dispositivo.unidadeId, {
+      dispositivoId: req.dispositivo.id,
+    });
   }
 
   @Public()
@@ -47,10 +55,7 @@ export class ProdutosManipuladosController {
   @Public()
   @UseGuards(DispositivoGuard)
   @Get(':id')
-  findOne(
-    @Param('id') id: string,
-    @Req() req: RequestWithDispositivo,
-  ) {
+  findOne(@Param('id') id: string, @Req() req: RequestWithDispositivo) {
     return this.service.findOne(id, req.dispositivo.unidadeId);
   }
 
@@ -62,10 +67,42 @@ export class ProdutosManipuladosController {
     @Body() dto: UpdateProdutoManipuladoDto,
     @Req() req: RequestWithDispositivo,
   ) {
-    return this.service.update(id, dto, req.dispositivo.unidadeId);
+    return this.service.update(id, dto, req.dispositivo.unidadeId, {
+      dispositivoId: req.dispositivo.id,
+    });
   }
 
-  // Exclusão (soft delete) é sensível — exige login + papel ADMIN.
+  // ---------- Fluxo administrativo (login, ADMIN) ----------
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(PapelUsuario.ADMIN)
+  @Get('admin/listar')
+  findAllAdmin(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query('incluirInativos') incluirInativos?: string,
+  ) {
+    return this.service.findAllAdmin(
+      user.unidadeId,
+      incluirInativos === 'true',
+    );
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(PapelUsuario.ADMIN)
+  @Patch('admin/:id')
+  updateAdmin(
+    @Param('id') id: string,
+    @Body() dto: UpdateProdutoManipuladoDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.service.update(id, dto, user.unidadeId, {
+      usuarioId: user.sub,
+      papelNoMomento: user.papel,
+    });
+  }
+
+  // Exclusão lógica (soft delete) — service.remove() exige o AuthenticatedUser
+  // completo (usa user.unidadeId para escopo + user.sub/papel para auditoria).
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(PapelUsuario.ADMIN)
   @Delete(':id')

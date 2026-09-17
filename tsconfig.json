@@ -1,24 +1,23 @@
 {
   "compilerOptions": {
-    "module": "CommonJS",
-    "moduleResolution": "Node",
-    "ignoreDeprecations": "6.0",
-    "esModuleInterop": true,
-    "isolatedModules": true,
+    "module": "commonjs",
     "declaration": true,
     "removeComments": true,
     "emitDecoratorMetadata": true,
     "experimentalDecorators": true,
     "allowSyntheticDefaultImports": true,
-    "target": "ES2023",
-    "useDefineForClassFields": false,
-    "types": ["node", "jest"],
+    "target": "ES2021",
     "sourceMap": true,
     "outDir": "./dist",
-    "incremental": true,
+    "baseUrl": "./",
+    "ignoreDeprecations": "6.0",
     "skipLibCheck": true,
-    "strict": true,
-    "strictPropertyInitialization": false,
-    "resolveJsonModule": true
+    "strictNullChecks": false,
+    "noImplicitAny": false,
+    "strictBindCallApply": false,
+    "forceConsistentCasingInFileNames": false,
+    "noFallthroughCasesInSwitch": false,
+    "rootDir": "./src",
+    "types": ["jest", "node"]
   }
 }

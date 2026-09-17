@@ -1,5 +1,5 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { CondicaoArmazenamento, PapelUsuario } from '@prisma/client';
+import { CondicaoArmazenamento, PapelUsuario, TipoEvento } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditoriaService } from '../auditoria/auditoria.service';
 
@@ -44,7 +44,7 @@ export class RegrasValidadeService {
         {
           usuarioId,
           papelNoMomento,
-          tipoEvento: 'UPDATE',
+          tipoEvento: TipoEvento.UPDATE,
           entidade: 'RegraValidade',
           entidadeId: regraAntes.id,
           dadosAntes: { horasValidade: regraAntes.horasValidade },

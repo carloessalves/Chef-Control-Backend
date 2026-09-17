@@ -3,6 +3,7 @@ import {
   ConflictException,
   NotFoundException,
   ForbiddenException,
+  BadRequestException,
 } from '@nestjs/common';
 import { PapelUsuario, Prisma, TipoEvento } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
@@ -10,6 +11,7 @@ import { AuthService } from '../auth/auth.service';
 import { AuditoriaService } from '../auditoria/auditoria.service';
 import { CreateUsuarioDto } from './dto/create-usuario.dto';
 import { UpdateUsuarioDto } from './dto/update-usuario.dto';
+import { AtualizarProprioPinDto } from './dto/atualizar-proprio-pin.dto';
 import { AuthenticatedUser } from '../auth/decorators/current-user.decorator';
 
 @Injectable()
@@ -48,11 +50,13 @@ export class UsuariosService {
 
       return this.omitirPin(usuario);
     } catch (error) {
-      if (
-        error instanceof Prisma.PrismaClientKnownRequestError &&
-        error.code === 'P2002'
-      ) {
-        throw new ConflictException('Já existe um usuário com este PIN nesta unidade.');
+      if (error instanceof Prisma.PrismaClientKnownRequestError) {
+        if (error.code === 'P2002') {
+          throw new ConflictException('Já existe um usuário com este PIN nesta unidade.');
+        }
+        if (error.code === 'P2003') {
+          throw new NotFoundException('Unidade informada não existe.');
+        }
       }
       throw error;
     }
@@ -128,14 +132,61 @@ export class UsuariosService {
 
       return this.omitirPin(atualizado);
     } catch (error) {
-      if (
-        error instanceof Prisma.PrismaClientKnownRequestError &&
-        error.code === 'P2002'
-      ) {
-        throw new ConflictException('Já existe um usuário com este PIN nesta unidade.');
+      if (error instanceof Prisma.PrismaClientKnownRequestError) {
+        if (error.code === 'P2002') {
+          throw new ConflictException('Já existe um usuário com este PIN nesta unidade.');
+        }
+        if (error.code === 'P2003') {
+          throw new NotFoundException('Unidade informada não existe.');
+        }
       }
       throw error;
     }
+  }
+
+  // Self-service: o próprio usuário troca seu PIN, mediante confirmação do PIN atual.
+  // Não exige papel específico — qualquer usuário autenticado pode chamar,
+  // pois altera apenas o próprio registro (requester.sub).
+  async updateOwnPin(dto: AtualizarProprioPinDto, requester: AuthenticatedUser) {
+    const usuarioAntes = await this.prisma.usuario.findUnique({
+      where: { id: requester.sub },
+    });
+
+    if (!usuarioAntes) {
+      throw new NotFoundException('Usuário não encontrado.');
+    }
+
+    const pinValido = await AuthService.verificarPin(dto.pinAtual, usuarioAntes.pin);
+    if (!pinValido) {
+      throw new BadRequestException('PIN atual incorreto.');
+    }
+
+    const novoPinHash = await AuthService.hashPin(dto.novoPin);
+
+    const atualizado = await this.prisma.$transaction(async (tx) => {
+      const usuarioAtualizado = await tx.usuario.update({
+        where: { id: requester.sub },
+        data: { pin: novoPinHash },
+      });
+
+      await this.auditoria.registrar(
+        {
+          usuarioId: requester.sub,
+          papelNoMomento: requester.papel,
+          tipoEvento: TipoEvento.UPDATE,
+          entidade: 'Usuario',
+          entidadeId: usuarioAtualizado.id,
+          // Nunca inclui o PIN (nem hash) — apenas sinaliza a troca
+          dadosAntes: { pin: '***' },
+          dadosDepois: { pin: '***', alteradoEm: new Date().toISOString() },
+        },
+        tx,
+      );
+
+      return usuarioAtualizado;
+    });
+
+    return this.omitirPin(atualizado);
   }
 
   async remove(id: string, requester: AuthenticatedUser) {

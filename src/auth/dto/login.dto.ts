@@ -1,8 +1,8 @@
-import { IsString, IsUUID, Length, Matches } from 'class-validator';
+import { IsString, Length, Matches } from 'class-validator';
 
 export class LoginDto {
-  @IsUUID()
-  usuarioId: string;
+  @IsString()
+  nomeUsuario: string;
 
   @IsString()
   @Length(4, 4, { message: 'O PIN deve conter exatamente 4 dígitos.' })

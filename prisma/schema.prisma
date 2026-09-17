@@ -36,11 +36,23 @@ enum TipoEvento {
   LOGIN
 }
 
-// ============= Model Unidade ===============
+enum EntidadeAuditoria {
+  Usuario
+  Emissor
+  Unidade
+  CategoriaProduto
+  ProdutoManipulado
+  RegraValidade
+  Dispositivo
+  Etiqueta
+}
+
+// ============================= Model Unidade =============================
+
 model Unidade {
   id           String     @id @default(uuid()) @db.Uuid
   nome         String     @unique
-  cnpj         String?
+  cnpj         String?    @unique
   ativo        Boolean    @default(true)
   criadoEm     DateTime   @default(now()) @db.Timestamptz(6)
   atualizadoEm DateTime   @default(now()) @updatedAt @db.Timestamptz(6)
@@ -54,10 +66,11 @@ model Unidade {
   @@map("unidades")
 }
 
-// ============= Model Usuário ===============
+// ================================= Model Usuário ==============================
+
 model Usuario {
   id                String            @id @default(uuid()) @db.Uuid
-  nome              String
+  nome              String            @unique
   funcao            String?
   papel             PapelUsuario
   pin               String
@@ -75,7 +88,8 @@ model Usuario {
   @@map("usuarios")
 }
 
-// ============= Model Emissor ===============
+// =================================== Model Emissor =================================
+
 model Emissor {
   id           String     @id @default(uuid()) @db.Uuid
   nome         String
@@ -91,7 +105,8 @@ model Emissor {
   @@map("emissores")
 }
 
-// ============= Model CategoriaProduto ===============
+// ================================== Model CategoriaProduto ============================
+
 model CategoriaProduto {
   id       String  @id @default(uuid()) @db.Uuid
   nome     String  @unique
@@ -102,7 +117,8 @@ model CategoriaProduto {
   @@map("categorias_produto")
 }
 
-// ============= Model ProdutoManipulado ===============
+// ============================= Model ProdutoManipulado ==============================
+
 model ProdutoManipulado {
   id             String              @id @default(uuid()) @db.Uuid
   nome           String
@@ -121,7 +137,8 @@ model ProdutoManipulado {
   @@map("produtos_manipulados")
 }
 
-// ============= Model RegraValidade ===============
+// ======================= Model RegraValidade =================================
+
 model RegraValidade {
   id            String                @id @default(uuid()) @db.Uuid
   condicao      CondicaoArmazenamento @unique
@@ -129,7 +146,8 @@ model RegraValidade {
   atualizadoEm  DateTime              @default(now()) @updatedAt @db.Timestamptz(6)
 }
 
-// ============= Model Dispositivo ===============
+// ======================== Model Dispositivo ==========================
+
 model Dispositivo {
   id            String     @id @default(uuid()) @db.Uuid
   identificador String     @unique
@@ -139,61 +157,76 @@ model Dispositivo {
   ultimoAcesso  DateTime?  @db.Timestamptz(6)
   criadoEm      DateTime   @default(now()) @db.Timestamptz(6)
 
-  unidade       Unidade    @relation(fields: [unidadeId], references: [id])
+  unidade       Unidade                 @relation(fields: [unidadeId], references: [id])
   etiquetas     Etiqueta[]
+  reimpressoes  HistoricoReimpressao[]
 
+  // Nota: existe um índice único parcial (unidadeId, nome) WHERE ativo = true,
+  // criado via migration SQL raw (não representável nativamente pelo Prisma).
+  // Ver prisma/migrations/..._dispositivo_nome_unico_por_unidade/migration.sql
   @@index([unidadeId])
   @@map("dispositivos")
 }
 
-// ============= Model Etiqueta ===============
+// ======================= Model Etiqueta ==================
+
 model Etiqueta {
-  id                String                @id @default(uuid()) @db.Uuid
-  produtoId         String                @db.Uuid
-  emissorId         String                @db.Uuid
-  usuarioGestaoId   String?               @db.Uuid
-  unidadeId         String                @db.Uuid
-  dispositivoId     String                @db.Uuid
+  id                 String    @id @default(uuid()) @db.Uuid
+  produtoId          String    @db.Uuid
+  emissorId          String    @db.Uuid
+  unidadeId          String    @db.Uuid
+  dispositivoId      String    @db.Uuid
+  emissorUsuarioId   String?   @db.Uuid
+  condicao           String
+  lote               String?
+  dataManipulacao    DateTime  @db.Timestamptz(6)
+  dataValidade       DateTime  @db.Timestamptz(6)
+  status             StatusEtiqueta @default(VALIDA)
+  motivoReimpressao  String?
+  motivoDescarte     String?
+  criadoEm           DateTime  @default(now()) @db.Timestamptz(6)
+  atualizadoEm       DateTime  @updatedAt @db.Timestamptz(6)
 
-  condicao          CondicaoArmazenamento
-  lote              String?
-  dataManipulacao   DateTime              @db.Timestamptz(6)
-  dataValidade      DateTime              @db.Timestamptz(6)
-  status            StatusEtiqueta        @default(VALIDA)
+  produto            ProdutoManipulado @relation(fields: [produtoId], references: [id])
+  emissor            Emissor           @relation(fields: [emissorId], references: [id])
+  unidade            Unidade           @relation(fields: [unidadeId], references: [id])
+  dispositivo        Dispositivo       @relation(fields: [dispositivoId], references: [id])
+  emissorUsuario     Usuario?          @relation("EmissorGestao", fields: [emissorUsuarioId], references: [id])
 
-  motivoReimpressao String?
-  motivoDescarte    String?
+  reimpressoes       HistoricoReimpressao[]
 
-  criadoEm          DateTime              @default(now()) @db.Timestamptz(6)
-  sincronizadoEm    DateTime?             @db.Timestamptz(6)
-
-  produto           ProdutoManipulado     @relation(fields: [produtoId], references: [id])
-  emissor            Emissor              @relation(fields: [emissorId], references: [id])
-  usuarioGestao     Usuario?              @relation("EmissorGestao", fields: [usuarioGestaoId], references: [id])
-  unidade           Unidade               @relation(fields: [unidadeId], references: [id])
-  dispositivo       Dispositivo           @relation(fields: [dispositivoId], references: [id])
-
-  @@index([produtoId])
-  @@index([unidadeId])
-  @@index([status])
-  @@index([dataValidade])
   @@map("etiquetas")
 }
 
-// ============= Model EventoAuditoria ===============
+// ================ Model HistoricoReimpressao ====================
+model HistoricoReimpressao {
+  id             String    @id @default(uuid()) @db.Uuid
+  etiquetaId     String    @db.Uuid
+  motivo         String
+  dispositivoId  String    @db.Uuid
+  criadoEm       DateTime  @default(now()) @db.Timestamptz(6)
+
+  etiqueta       Etiqueta    @relation(fields: [etiquetaId], references: [id])
+  dispositivo    Dispositivo @relation(fields: [dispositivoId], references: [id])
+
+  @@map("historico_reimpressoes")
+  @@index([etiquetaId])
+}
+
+// ===================== Model EventoAuditoria =====================
 model EventoAuditoria {
-  id             String        @id @default(uuid()) @db.Uuid
-  usuarioId      String?       @db.Uuid
+  id             String            @id @default(uuid()) @db.Uuid
+  usuarioId      String?           @db.Uuid
   papelNoMomento PapelUsuario?
   tipoEvento     TipoEvento
-  entidade       String
+  entidade       EntidadeAuditoria   // <- antes era String
   entidadeId     String?
-  dadosAntes     Json?         @db.JsonB
-  dadosDepois    Json?         @db.JsonB
-  dispositivoId  String?       @db.Uuid
-  criadoEm       DateTime      @default(now()) @db.Timestamptz(6)
+  dadosAntes     Json?             @db.JsonB
+  dadosDepois    Json?             @db.JsonB
+  dispositivoId  String?           @db.Uuid
+  criadoEm       DateTime          @default(now()) @db.Timestamptz(6)
 
-  usuario        Usuario?      @relation(fields: [usuarioId], references: [id])
+  usuario        Usuario?          @relation(fields: [usuarioId], references: [id])
 
   @@index([entidade, entidadeId])
   @@index([usuarioId])

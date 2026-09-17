@@ -1,3 +1,4 @@
+// src/etiquetas/etiquetas.controller.ts
 import {
   Controller,
   Post,
@@ -7,6 +8,7 @@ import {
   Body,
   Query,
   UseGuards,
+  ParseUUIDPipe,
 } from '@nestjs/common';
 import { EtiquetasService } from './etiquetas.service.js';
 import { DispositivoGuard } from '../dispositivos/dispositivo.guard.js';
@@ -57,6 +59,14 @@ export class EtiquetasController {
     return this.etiquetasService.atualizarStatus(id, dto, dispositivo);
   }
 
+  // ---- Rota PÚBLICA de consulta via QR — sem device, sem login ----
+  // Precisa vir ANTES de ':id' para não colidir com a rota de gestão.
+  @Public()
+  @Get('consulta/:id')
+  consultaPublica(@Param('id', new ParseUUIDPipe()) id: string) {
+    return this.etiquetasService.consultaPublica(id);
+  }
+
   // ---- Rotas autenticadas por USUÁRIO (JWT global) — AUDITOR bloqueado ----
 
   @Roles(PapelUsuario.ADMIN, PapelUsuario.EMISSOR)
@@ -64,6 +74,18 @@ export class EtiquetasController {
   @Get()
   listar(@Query() filtros: ListarEtiquetasDto, @CurrentUser() usuario: AuthenticatedUser) {
     return this.etiquetasService.listar(usuario.unidadeId, filtros);
+  }
+
+  // 🆕 Histórico de reimpressões — precisa vir antes de ':id' para o roteamento
+  // funcionar corretamente (evita conflito de rota estática vs. dinâmica).
+  @Roles(PapelUsuario.ADMIN, PapelUsuario.EMISSOR)
+  @UseGuards(RolesGuard)
+  @Get(':id/reimpressoes')
+  listarReimpressoes(
+    @Param('id') id: string,
+    @CurrentUser() usuario: AuthenticatedUser,
+  ) {
+    return this.etiquetasService.listarHistoricoReimpressoes(id, usuario.unidadeId);
   }
 
   @Roles(PapelUsuario.ADMIN, PapelUsuario.EMISSOR)

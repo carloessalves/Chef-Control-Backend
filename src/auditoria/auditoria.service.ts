@@ -1,81 +1,127 @@
-import { Injectable, Logger } from '@nestjs/common';
-import { PapelUsuario, TipoEvento, Prisma, PrismaClient } from '@prisma/client';
-import { PrismaService } from '../prisma/prisma.service';
+import { Injectable } from '@nestjs/common';
+import { Prisma, TipoEvento, PapelUsuario, EntidadeAuditoria } from '@prisma/client';
+import { PrismaService } from '../prisma/prisma.service.js';
 
-type PrismaTransactionClient = Omit<
-  PrismaClient,
-  '$connect' | '$disconnect' | '$on' | '$transaction' | '$use' | '$extends'
->;
+export interface ActorAuditoria {
+  usuarioId?: string;
+  papelNoMomento?: PapelUsuario;
+  dispositivoId?: string;
+}
 
-interface RegistrarEventoParams {
-  usuarioId?: string | null;
-  papelNoMomento?: PapelUsuario | null;
+interface RegistrarParams extends ActorAuditoria {
   tipoEvento: TipoEvento;
-  entidade: string;
-  entidadeId?: string | null;
-  dadosAntes?: Prisma.InputJsonValue | null;
-  dadosDepois?: Prisma.InputJsonValue | null;
-  dispositivoId?: string | null;
+  entidade: EntidadeAuditoria; // <- antes era string
+  entidadeId?: string;
+  dadosAntes?: unknown;
+  dadosDepois?: unknown;
+}
+
+export interface ListarAuditoriaParams {
+  entidade?: EntidadeAuditoria;
+  entidadeId?: string;
+  usuarioId?: string;
+  tipoEvento?: TipoEvento;
+  dataInicio?: Date;
+  dataFim?: Date;
+  page?: number;
+  pageSize?: number;
 }
 
 @Injectable()
 export class AuditoriaService {
-  private readonly logger = new Logger(AuditoriaService.name);
-
   constructor(private readonly prisma: PrismaService) {}
 
-  /**
-   * Registra um evento de auditoria.
-   *
-   * @param params Dados do evento.
-   * @param tx Cliente transacional opcional (`tx` de `$transaction`).
-   *   Quando informado, a auditoria é escrita na MESMA transação da
-   *   operação de negócio (atômico: se um falhar, ambos revertem).
-   *   Quando omitido, usa o client padrão e falhas de auditoria são
-   *   apenas logadas, sem interromper o fluxo principal.
-   */
-  async registrar(
-    params: RegistrarEventoParams,
-    tx?: PrismaTransactionClient,
-  ): Promise<void> {
-    const client = tx ?? this.prisma;
+  async registrar(params: RegistrarParams, tx?: Prisma.TransactionClient) {
+    const {
+      tipoEvento,
+      entidade,
+      entidadeId,
+      usuarioId,
+      papelNoMomento,
+      dispositivoId,
+      dadosAntes,
+      dadosDepois,
+    } = params;
+
+    const data = {
+      tipoEvento,
+      entidade,
+      entidadeId,
+      usuarioId,
+      papelNoMomento,
+      dispositivoId,
+      dadosAntes: dadosAntes as any,
+      dadosDepois: dadosDepois as any,
+    };
 
     if (tx) {
-      // Dentro de uma transação: deixa o erro propagar para
-      // garantir atomicidade (rollback da operação de negócio).
-      await client.eventoAuditoria.create({
-        data: {
-          usuarioId: params.usuarioId ?? null,
-          papelNoMomento: params.papelNoMomento ?? null,
-          tipoEvento: params.tipoEvento,
-          entidade: params.entidade,
-          entidadeId: params.entidadeId ?? null,
-          dadosAntes: params.dadosAntes ?? undefined,
-          dadosDepois: params.dadosDepois ?? undefined,
-          dispositivoId: params.dispositivoId ?? null,
-        },
-      });
+      await tx.eventoAuditoria.create({ data });
       return;
     }
 
     try {
-      await client.eventoAuditoria.create({
-        data: {
-          usuarioId: params.usuarioId ?? null,
-          papelNoMomento: params.papelNoMomento ?? null,
-          tipoEvento: params.tipoEvento,
-          entidade: params.entidade,
-          entidadeId: params.entidadeId ?? null,
-          dadosAntes: params.dadosAntes ?? undefined,
-          dadosDepois: params.dadosDepois ?? undefined,
-          dispositivoId: params.dispositivoId ?? null,
-        },
-      });
+      await this.prisma.eventoAuditoria.create({ data });
     } catch (error) {
-      this.logger.error(
-        `Falha ao registrar evento de auditoria (${params.tipoEvento} em ${params.entidade}:${params.entidadeId ?? '?'})`,
-        error instanceof Error ? error.stack : String(error),
-      );
+      console.error('[AuditoriaService] Falha ao registrar evento:', error);
     }
+  }
+
+  async findAll(params: ListarAuditoriaParams) {
+    const {
+      entidade,
+      entidadeId,
+      usuarioId,
+      tipoEvento,
+      dataInicio,
+      dataFim,
+      page = 1,
+      pageSize = 20,
+    } = params;
+
+    const where: Prisma.EventoAuditoriaWhereInput = {
+      entidade,
+      entidadeId,
+      usuarioId,
+      tipoEvento,
+      criadoEm: {
+        gte: dataInicio,
+        lte: dataFim,
+      },
+    };
+
+    // remove chaves undefined para não filtrar indevidamente
+    Object.keys(where).forEach((key) => {
+      if (where[key as keyof typeof where] === undefined) {
+        delete where[key as keyof typeof where];
+      }
+    });
+    if (where.criadoEm && !dataInicio && !dataFim) {
+      delete where.criadoEm;
+    }
+
+    const skip = (page - 1) * pageSize;
+
+    const [data, total] = await this.prisma.$transaction([
+      this.prisma.eventoAuditoria.findMany({
+        where,
+        orderBy: { criadoEm: 'desc' },
+        skip,
+        take: pageSize,
+        include: {
+          usuario: { select: { id: true, nome: true, papel: true } },
+        },
+      }),
+      this.prisma.eventoAuditoria.count({ where }),
+    ]);
+
+    return {
+      data,
+      meta: {
+        total,
+        page,
+        pageSize,
+        totalPages: Math.ceil(total / pageSize),
+      },
+    };
   }
 }

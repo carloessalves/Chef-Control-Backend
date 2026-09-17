@@ -1,0 +1,149 @@
+<!-- public/consulta.html -->
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Consulta de Etiqueta — Chef-Sys</title>
+  <style>
+    body {
+      font-family: -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+      background: #f4f6f5;
+      margin: 0;
+      padding: 24px;
+      display: flex;
+      justify-content: center;
+    }
+    .card {
+      background: #fff;
+      border-radius: 12px;
+      box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+      padding: 24px;
+      max-width: 380px;
+      width: 100%;
+    }
+    h1 {
+      font-size: 20px;
+      margin: 0 0 4px;
+      color: #1b1b1b;
+    }
+    .status {
+      display: inline-block;
+      padding: 4px 12px;
+      border-radius: 999px;
+      font-size: 13px;
+      font-weight: 600;
+      margin-bottom: 16px;
+    }
+    .status-valida { background: #e3f6e8; color: #1e7e34; }
+    .status-vencida { background: #fdeaea; color: #c0392b; }
+    .status-descartada { background: #f0f0f0; color: #666; }
+    .status-consumida { background: #eaf0fd; color: #2b5fc0; }
+    .row {
+      display: flex;
+      justify-content: space-between;
+      padding: 8px 0;
+      border-bottom: 1px solid #eee;
+      font-size: 14px;
+    }
+    .row:last-child { border-bottom: none; }
+    .label { color: #888; }
+    .value { font-weight: 600; text-align: right; }
+    .erro {
+      text-align: center;
+      color: #c0392b;
+      padding: 32px 0;
+    }
+    .loading {
+      text-align: center;
+      color: #888;
+      padding: 32px 0;
+    }
+    .alergenos {
+      margin-top: 12px;
+      padding: 10px;
+      background: #fff8e1;
+      border-radius: 8px;
+      font-size: 13px;
+      color: #7a5b00;
+    }
+  </style>
+</head>
+<body>
+  <div class="card" id="card">
+    <div class="loading">Carregando informações...</div>
+  </div>
+
+  <script>
+    // Ajuste se a API estiver em domínio/porta diferente do próprio host.
+    const API_BASE = window.location.origin;
+
+    function getIdFromUrl() {
+      const params = new URLSearchParams(window.location.search);
+      const idFromQuery = params.get('id');
+      if (idFromQuery) return idFromQuery;
+
+      // Suporta também /consulta.html/{id} caso a URL do QR use path.
+      const parts = window.location.pathname.split('/').filter(Boolean);
+      return parts[parts.length - 1] !== 'consulta.html' ? parts[parts.length - 1] : null;
+    }
+
+    function formatarData(iso) {
+      if (!iso) return '-';
+      const d = new Date(iso);
+      return d.toLocaleString('pt-BR', {
+        day: '2-digit', month: '2-digit', year: 'numeric',
+        hour: '2-digit', minute: '2-digit',
+      });
+    }
+
+    function statusInfo(status) {
+      const map = {
+        VALIDA: { label: 'Válida', className: 'status-valida' },
+        VENCIDA: { label: 'Vencida', className: 'status-vencida' },
+        DESCARTADA: { label: 'Descartada', className: 'status-descartada' },
+        CONSUMIDA: { label: 'Consumida', className: 'status-consumida' },
+      };
+      return map[status] || { label: status, className: '' };
+    }
+
+    async function carregar() {
+      const card = document.getElementById('card');
+      const id = getIdFromUrl();
+
+      if (!id) {
+        card.innerHTML = '<div class="erro">Etiqueta não identificada.</div>';
+        return;
+      }
+
+      try {
+        const resp = await fetch(`${API_BASE}/etiquetas/consulta/${id}`);
+        if (!resp.ok) {
+          throw new Error('Etiqueta não encontrada.');
+        }
+        const data = await resp.json();
+        const st = statusInfo(data.status);
+
+        card.innerHTML = `
+          <h1>${data.produto}</h1>
+          <span class="status ${st.className}">${st.label}</span>
+          <div class="row"><span class="label">Manipulação</span><span class="value">${formatarData(data.dataManipulacao)}</span></div>
+          <div class="row"><span class="label">Validade</span><span class="value">${formatarData(data.dataValidade)}</span></div>
+          <div class="row"><span class="label">Condição</span><span class="value">${data.condicao}</span></div>
+          ${data.lote ? `<div class="row"><span class="label">Lote</span><span class="value">${data.lote}</span></div>` : ''}
+          <div class="row"><span class="label">Responsável</span><span class="value">${data.responsavel}</span></div>
+          ${
+            data.alergenos && data.alergenos.length
+              ? `<div class="alergenos">⚠️ Contém: ${data.alergenos.join(', ')}</div>`
+              : ''
+          }
+        `;
+      } catch (e) {
+        card.innerHTML = '<div class="erro">Etiqueta não encontrada ou link inválido.</div>';
+      }
+    }
+
+    carregar();
+  </script>
+</body>
+</html>

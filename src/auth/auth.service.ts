@@ -1,13 +1,16 @@
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { Injectable, Logger, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../prisma/prisma.service';
 import { LoginDto } from './dto/login.dto';
+import { TipoEvento, PapelUsuario, EntidadeAuditoria } from '@prisma/client';
 
 const SALT_ROUNDS = 10;
 
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name);
+
   constructor(
     private prisma: PrismaService,
     private jwtService: JwtService,
@@ -17,8 +20,10 @@ export class AuthService {
     return bcrypt.hash(pin, SALT_ROUNDS);
   }
 
-  // Lista de usuários da unidade do dispositivo, para a tela de seleção
-  // antes do PIN (usuarios, relatorios, auditoria).
+  static async verificarPin(pin: string, hash: string): Promise<boolean> {
+    return bcrypt.compare(pin, hash);
+  }
+
   async listarUsuariosDaUnidade(unidadeId: string) {
     return this.prisma.usuario.findMany({
       where: { unidadeId, ativo: true },
@@ -27,23 +32,90 @@ export class AuthService {
     });
   }
 
-  async login(dto: LoginDto, unidadeId: string) {
-    const usuario = await this.prisma.usuario.findUnique({
-      where: { id: dto.usuarioId },
+  async login(
+  dto: LoginDto,
+  unidadeId: string | undefined,
+  dispositivoId: string | undefined,
+) {
+  const usuario = await this.prisma.usuario.findFirst({
+    where: {
+      nome: dto.nomeUsuario,
+      ...(unidadeId ? { unidadeId } : {}),
+    },
+  });
+
+  if (!usuario || !usuario.ativo) {
+    await this.registrarTentativaLogin({
+      usuarioId: usuario?.id ?? null,
+      papel: usuario?.papel ?? null,
+      dispositivoId,
+      sucesso: false,
+      motivo: 'Usuário inválido ou inativo',
     });
+    throw new UnauthorizedException('Usuário inválido ou inativo.');
+  }
 
-    // Garante que o usuário selecionado pertence à mesma unidade do
-    // dispositivo que está fazendo a requisição.
-    if (!usuario || !usuario.ativo || usuario.unidadeId !== unidadeId) {
-      throw new UnauthorizedException('Usuário inválido ou inativo.');
-    }
+  const pinValido = await bcrypt.compare(dto.pin, usuario.pin);
+  if (!pinValido) {
+    await this.registrarTentativaLogin({
+      usuarioId: usuario.id,
+      papel: usuario.papel,
+      dispositivoId,
+      sucesso: false,
+      motivo: 'PIN inválido',
+    });
+    throw new UnauthorizedException('PIN inválido.');
+  }
 
-    const pinValido = await bcrypt.compare(dto.pin, usuario.pin);
-    if (!pinValido) {
-      throw new UnauthorizedException('PIN inválido.');
-    }
+  await this.registrarTentativaLogin({
+    usuarioId: usuario.id,
+    papel: usuario.papel,
+    dispositivoId,
+    sucesso: true,
+  });
 
+  return this.gerarToken(usuario);
+}
+
+
+  // Usado pelo DispositivosService no fluxo de "vincular com login",
+  // que também precisa emitir um token ao final da operação.
+  emitirToken(usuario: {
+    id: string;
+    papel: PapelUsuario;
+    unidadeId: string;
+    nome: string;
+  }) {
     return this.gerarToken(usuario);
+  }
+
+  private async registrarTentativaLogin(params: {
+    usuarioId: string | null;
+    papel: PapelUsuario | null;
+    dispositivoId?: string;
+    sucesso: boolean;
+    motivo?: string;
+  }) {
+    const { usuarioId, papel, dispositivoId, sucesso, motivo } = params;
+
+    try {
+      await this.prisma.eventoAuditoria.create({
+        data: {
+          usuarioId: usuarioId ?? undefined,
+          papelNoMomento: papel ?? undefined,
+          tipoEvento: TipoEvento.LOGIN,
+          entidade: EntidadeAuditoria.Usuario,
+          entidadeId: usuarioId ?? undefined,
+          dadosDepois: { sucesso, motivo: motivo ?? null },
+          dispositivoId: dispositivoId ?? undefined,
+        },
+      });
+    } catch (error) {
+      this.logger.error(
+        `Falha ao registrar auditoria de tentativa de login (usuarioId: ${usuarioId ?? 'desconhecido'}).`,
+        error instanceof Error ? error.stack : String(error),
+      );
+    }
   }
 
   private gerarToken(usuario: {
@@ -59,10 +131,7 @@ export class AuthService {
       nome: usuario.nome,
     };
 
-    const accessToken = this.jwtService.sign(payload, {
-      secret: process.env.JWT_SECRET,
-      expiresIn: (process.env.JWT_ACCESS_EXPIRATION || '2h') as any,
-    });
+    const accessToken = this.jwtService.sign(payload);
 
     return {
       accessToken,
@@ -75,4 +144,3 @@ export class AuthService {
     };
   }
 }
-

@@ -15,13 +15,14 @@ import { SharedAuthModule } from './auth/shared-auth.module.js';
 import { ScheduleModule } from '@nestjs/schedule';
 import { EtiquetasModule } from './etiquetas/etiquetas.module';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
+import { HealthModule } from './health/health.module';
 
 @Module({
   imports: [
     PrismaModule, UnidadesModule, EmissoresModule, CategoriasProdutoModule,
     AuthModule, UsuariosModule, ProdutosManipuladosModule, DispositivosModule,
     RegrasValidadeModule, SharedAuthModule, ScheduleModule.forRoot(),
-    EtiquetasModule,
+    EtiquetasModule,HealthModule,
     ThrottlerModule.forRoot([
       {
         ttl: 60000, // 60 segundos

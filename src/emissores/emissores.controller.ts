@@ -20,6 +20,10 @@ import { Roles } from '../auth/decorators/roles.decorator';
 import { DispositivoGuard } from '../dispositivos/dispositivo.guard';
 import { RequestWithDispositivo } from '../dispositivos/request-with-dispositivo.js';
 import { Public } from '../auth/decorators/public.decorator';
+import {
+  CurrentUser,
+  AuthenticatedUser,
+} from '../auth/decorators/current-user.decorator';
 
 @Controller('emissores')
 export class EmissoresController {
@@ -34,7 +38,9 @@ export class EmissoresController {
     @Body() dto: CreateEmissorDto,
     @Req() req: RequestWithDispositivo,
   ) {
-    return this.emissoresService.create(dto, req.dispositivo.unidadeId);
+    return this.emissoresService.create(dto, req.dispositivo.unidadeId, {
+      dispositivoId: req.dispositivo.id,
+    });
   }
 
   @Public()
@@ -61,14 +67,24 @@ export class EmissoresController {
   update(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateEmissorDto,
+    @CurrentUser() user: AuthenticatedUser,
   ) {
-    return this.emissoresService.update(id, dto);
+    return this.emissoresService.update(id, dto, {
+  usuarioId: user.sub,
+  papelNoMomento: user.papel,
+});
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(PapelUsuario.ADMIN)
   @Delete(':id')
-  remove(@Param('id', ParseUUIDPipe) id: string) {
-    return this.emissoresService.remove(id);
+  remove(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.emissoresService.remove(id, {
+  usuarioId: user.sub,
+  papelNoMomento: user.papel,
+});
   }
 }

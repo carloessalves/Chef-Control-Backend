@@ -1,24 +1,47 @@
-import {
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { AuditoriaService, ActorAuditoria } from '../auditoria/auditoria.service.js';
 import { CreateEmissorDto } from './dto/create-emissor.dto.js';
 import { UpdateEmissorDto } from './dto/update-emissor.dto.js';
+import { Prisma, TipoEvento, EntidadeAuditoria } from '@prisma/client';
 
 @Injectable()
 export class EmissoresService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private auditoria: AuditoriaService,
+  ) {}
 
   // Fluxo operacional (tablet, sem login) — unidadeId vem do dispositivo
-  async create(dto: CreateEmissorDto, unidadeId: string) {
-    return this.prisma.emissor.create({
-      data: {
-        nome: dto.nome,
-        funcao: dto.funcao,
-        unidadeId,
-        ativo: dto.ativo ?? true,
-      },
+  async create(
+    dto: CreateEmissorDto,
+    unidadeId: string,
+    actor: ActorAuditoria,
+  ) {
+    await this.validarUnidade(unidadeId);
+
+    return this.prisma.$transaction(async (tx) => {
+      const emissor = await tx.emissor.create({
+        data: {
+          nome: dto.nome,
+          funcao: dto.funcao,
+          unidadeId,
+          ativo: dto.ativo ?? true,
+        },
+      });
+
+      await this.auditoria.registrar(
+        {
+          ...actor,
+          tipoEvento: TipoEvento.CREATE,
+          entidade: EntidadeAuditoria.Emissor,
+          entidadeId: emissor.id,
+          dadosDepois: emissor,
+        },
+        tx,
+      );
+
+      return emissor;
     });
   }
 
@@ -52,22 +75,66 @@ export class EmissoresService {
     return emissor;
   }
 
-  async update(id: string, dto: UpdateEmissorDto) {
-    await this.findOneAdmin(id);
+  async update(id: string, dto: UpdateEmissorDto, actor: ActorAuditoria) {
+    const antes = await this.findOneAdmin(id);
 
-    return this.prisma.emissor.update({
-      where: { id },
-      data: dto,
+    return this.prisma.$transaction(async (tx) => {
+      const depois = await tx.emissor.update({
+        where: { id },
+        data: dto,
+      });
+
+      await this.auditoria.registrar(
+        {
+          ...actor,
+          tipoEvento: TipoEvento.UPDATE,
+          entidade: EntidadeAuditoria.Emissor,
+          entidadeId: id,
+          dadosAntes: antes,
+          dadosDepois: depois,
+        },
+        tx,
+      );
+
+      return depois;
     });
   }
 
-  async remove(id: string) {
-    await this.findOneAdmin(id);
+  async remove(id: string, actor: ActorAuditoria) {
+    const antes = await this.findOneAdmin(id);
 
-    // Soft delete — mantém histórico de etiquetas emitidas
-    return this.prisma.emissor.update({
-      where: { id },
-      data: { ativo: false },
+    return this.prisma.$transaction(async (tx) => {
+      // Soft delete — mantém histórico de etiquetas emitidas
+      const depois = await tx.emissor.update({
+        where: { id },
+        data: { ativo: false },
+      });
+
+      await this.auditoria.registrar(
+        {
+          ...actor,
+          tipoEvento: TipoEvento.DELETE,
+          entidade: EntidadeAuditoria.Emissor,
+          entidadeId: id,
+          dadosAntes: antes,
+          dadosDepois: depois,
+        },
+        tx,
+      );
+
+      return depois;
     });
+  }
+
+  // ---------- Helpers ----------
+
+  private async validarUnidade(unidadeId: string) {
+    const unidade = await this.prisma.unidade.findFirst({
+      where: { id: unidadeId, ativo: true },
+    });
+
+    if (!unidade) {
+      throw new NotFoundException('Unidade não encontrada ou inativa.');
+    }
   }
 }
