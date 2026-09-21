@@ -47,6 +47,26 @@ enum EntidadeAuditoria {
   Etiqueta
 }
 
+// ============================= Sync Outbox (seção 15 da doc de arquitetura) =============================
+// Usado apenas quando SERVER_MODE=local: fila de operações pendentes de sincronização
+// com o backend cloud (agregador). Populada em código pelos services relevantes
+// (EtiquetasService, ProdutosManipuladosService, EmissoresService) a cada create/update.
+
+enum SyncOutboxStatus {
+  PENDENTE
+  ENVIADO
+  ERRO_PERMANENTE
+}
+
+enum SyncOutboxTipo {
+  CRIAR_ETIQUETA
+  CRIAR_PRODUTO
+  ATUALIZAR_PRODUTO
+  CRIAR_EMISSOR
+  ATUALIZAR_EMISSOR   
+  ATUALIZAR_ETIQUETA
+}
+
 // ============================= Model Unidade =============================
 
 model Unidade {
@@ -177,7 +197,7 @@ model Etiqueta {
   unidadeId          String    @db.Uuid
   dispositivoId      String    @db.Uuid
   emissorUsuarioId   String?   @db.Uuid
-  condicao           String
+  condicao           CondicaoArmazenamento   // 🆕 antes era String
   lote               String?
   dataManipulacao    DateTime  @db.Timestamptz(6)
   dataValidade       DateTime  @db.Timestamptz(6)
@@ -231,4 +251,24 @@ model EventoAuditoria {
   @@index([entidade, entidadeId])
   @@index([usuarioId])
   @@map("eventos_auditoria")
+}
+
+// ============================= Model SyncOutbox =============================
+// Fila de sincronização local -> cloud (ver seção 15 da documentação de arquitetura).
+// Só é populada/consumida quando SERVER_MODE=local. Em SERVER_MODE=cloud, a tabela
+// existe (mesmo schema em ambos os ambientes), mas fica sempre vazia.
+
+model SyncOutbox {
+  id                 String            @id @default(uuid()) @db.Uuid
+  tipo               SyncOutboxTipo
+  payload            Json              @db.JsonB
+  status             SyncOutboxStatus  @default(PENDENTE)
+  tentativas         Int               @default(0)
+  proximaTentativaEm DateTime?         @db.Timestamptz(6)
+  erro               String?
+  criadoEm           DateTime          @default(now()) @db.Timestamptz(6)
+  atualizadoEm       DateTime          @default(now()) @updatedAt @db.Timestamptz(6)
+
+  @@index([status, proximaTentativaEm])
+  @@map("sync_outbox")
 }
