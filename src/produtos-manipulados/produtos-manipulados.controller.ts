@@ -89,12 +89,14 @@ export class ProdutosManipuladosController {
    * 🆕 Endpoints de sincronização usados exclusivamente pelo Sync Worker (local -> cloud).
    * Protegidos por SyncApiKeyGuard.
    */
+  @Public()
   @UseGuards(SyncApiKeyGuard)
   @Post('sync')
   sincronizarCriacao(@Body() payload: any) {
     return this.service.upsertParaSync(payload);
   }
 
+  @Public()
   @UseGuards(SyncApiKeyGuard)
   @Patch(':id/sync')
   sincronizarAtualizacao(@Param('id') id: string, @Body() payload: any) {

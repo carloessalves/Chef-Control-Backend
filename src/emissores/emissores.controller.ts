@@ -69,12 +69,14 @@ export class EmissoresController {
    * 🆕 Endpoints de sincronização usados exclusivamente pelo Sync Worker (local -> cloud).
    * Protegidos por SyncApiKeyGuard — nunca expostos a clientes finais.
    */
+  @Public()
   @UseGuards(SyncApiKeyGuard)
   @Post('sync')
   sincronizarCriacao(@Body() payload: any) {
     return this.emissoresService.upsertParaSync(payload);
   }
 
+  @Public()
   @UseGuards(SyncApiKeyGuard)
   @Patch(':id/sync')
   sincronizarAtualizacao(@Param('id') id: string, @Body() payload: any) {

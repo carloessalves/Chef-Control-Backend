@@ -57,6 +57,7 @@ export class EtiquetasController {
  * Faz upsert por id: se já existir, ignora/atualiza; se não existir, cria.
  * NÃO deve ser exposto para clientes finais (protegido por SyncApiKeyGuard).
  */
+  @Public()
   @UseGuards(SyncApiKeyGuard)
   @Post('sync')
   async sincronizarCriacao(@Body() dto: CriarEtiquetaDto) {
