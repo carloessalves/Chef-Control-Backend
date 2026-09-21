@@ -6,9 +6,10 @@ import { EtiquetasService } from './etiquetas.service.js';
 import { EtiquetasRepository } from './etiquetas.repository.js';
 import { EtiquetasCronService } from './etiquetas.cron.js';
 import { AuditoriaModule } from '../auditoria/auditoria.module.js';
+import { SyncOutboxModule } from '../sync-outbox/sync-outbox.module.js'; // 🆕
 
 @Module({
-  imports: [PrismaModule, AuditoriaModule],
+  imports: [PrismaModule, AuditoriaModule, SyncOutboxModule], // 🆕
   controllers: [EtiquetasController],
   providers: [EtiquetasService, EtiquetasRepository, EtiquetasCronService],
 })

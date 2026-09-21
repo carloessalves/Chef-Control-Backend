@@ -6,18 +6,20 @@ import {
 } from '@nestjs/common';
 import { EtiquetasRepository } from './etiquetas.repository.js';
 import { AuditoriaService } from '../auditoria/auditoria.service.js';
+import { SyncOutboxService } from '../sync-outbox/sync-outbox.service.js'; // 🆕
 import { CriarEtiquetaDto } from './dto/criar-etiqueta.dto.js';
 import { ReimprimirEtiquetaDto } from './dto/reimprimir-etiqueta.dto.js';
 import { AtualizarStatusEtiquetaDto } from './dto/atualizar-status-etiqueta.dto.js';
 import { ListarEtiquetasDto } from './dto/listar-etiquetas.dto.js';
 import { AuthenticatedDevice } from '../auth/decorators/current-device.decorator.js';
-import { StatusEtiqueta, TipoEvento, Prisma } from '@prisma/client';
+import { StatusEtiqueta, TipoEvento, Prisma, SyncOutboxTipo } from '@prisma/client'; // 🆕 SyncOutboxTipo
 
 @Injectable()
 export class EtiquetasService {
   constructor(
     private readonly etiquetasRepo: EtiquetasRepository,
     private readonly auditoria: AuditoriaService,
+    private readonly syncOutbox: SyncOutboxService, // 🆕
   ) {}
 
   async criar(dto: CriarEtiquetaDto, dispositivo: AuthenticatedDevice) {
@@ -30,35 +32,65 @@ export class EtiquetasService {
       dataManipulacao.getTime() + regra.horasValidade * 60 * 60 * 1000,
     );
 
-    return this.etiquetasRepo.executarEmTransacao(async (tx) => {
-      const etiqueta = await this.etiquetasRepo.criar(
-        {
-          produto: { connect: { id: dto.produtoId } },
-          emissor: { connect: { id: dto.emissorId } },
-          unidade: { connect: { id: dispositivo.unidadeId } },
-          dispositivo: { connect: { id: dispositivo.id } },
-          condicao: dto.condicao,
-          lote: dto.lote,
-          dataManipulacao,
-          dataValidade,
-          status: StatusEtiqueta.VALIDA,
-        },
-        tx,
-      );
+    try {
+      return await this.etiquetasRepo.executarEmTransacao(async (tx) => {
+        const etiqueta = await this.etiquetasRepo.criar(
+          {
+            ...(dto.id ? { id: dto.id } : {}),
+            produto: { connect: { id: dto.produtoId } },
+            emissor: { connect: { id: dto.emissorId } },
+            unidade: { connect: { id: dispositivo.unidadeId } },
+            dispositivo: { connect: { id: dispositivo.id } },
+            condicao: dto.condicao,
+            lote: dto.lote,
+            dataManipulacao,
+            dataValidade,
+            status: StatusEtiqueta.VALIDA,
+          },
+          tx,
+        );
 
-      await this.auditoria.registrar(
-        {
-          tipoEvento: TipoEvento.EMIT,
-          entidade: 'Etiqueta',
-          entidadeId: etiqueta.id,
-          dadosDepois: etiqueta,
-          dispositivoId: dispositivo.id,
-        },
-        tx,
-      );
+        await this.auditoria.registrar(
+          {
+            tipoEvento: TipoEvento.EMIT,
+            entidade: 'Etiqueta',
+            entidadeId: etiqueta.id,
+            dadosDepois: etiqueta,
+            dispositivoId: dispositivo.id,
+          },
+          tx,
+        );
 
-      return etiqueta;
-    });
+        // 🆕 Enfileira para sincronização com o cloud (no-op se SERVER_MODE=cloud)
+        await this.syncOutbox.enfileirar(
+          SyncOutboxTipo.CRIAR_ETIQUETA,
+          etiqueta,
+          tx,
+        );
+
+        return etiqueta;
+      });
+    } catch (e) {
+      // Idempotência: se a fila de sync reenviar um id já criado
+      // (ex.: resposta original se perdeu por timeout de rede),
+      // devolve a etiqueta existente em vez de estourar erro 500.
+      if (dto.id && this.isConstraintViolation(e)) {
+        const existente = await this.etiquetasRepo.encontrarPorIdEUnidade(
+          dto.id,
+          dispositivo.unidadeId,
+        );
+        if (existente) return existente;
+      }
+      throw e;
+    }
+  }
+
+  private isConstraintViolation(e: unknown): boolean {
+    return (
+      typeof e === 'object' &&
+      e !== null &&
+      (e as { code?: string }).code === 'P2002'
+    );
   }
 
   // ---------- Helpers de validação ----------
@@ -132,6 +164,13 @@ export class EtiquetasService {
         tx,
       );
 
+      // 🆕 Enfileira atualização para sincronização com o cloud
+      await this.syncOutbox.enfileirar(
+        SyncOutboxTipo.ATUALIZAR_ETIQUETA,
+        etiquetaAtualizada,
+        tx,
+      );
+
       return { etiqueta: etiquetaAtualizada, historico };
     });
   }
@@ -176,6 +215,14 @@ export class EtiquetasService {
           dadosDepois: etiquetaAtualizada,
           dispositivoId: dispositivo.id,
         },
+        tx,
+      );
+
+      // 🆕 Enfileira atualização para sincronização com o cloud
+      // (cobre DESCARTADA, CONSUMIDA e qualquer outra transição de status)
+      await this.syncOutbox.enfileirar(
+        SyncOutboxTipo.ATUALIZAR_ETIQUETA,
+        etiquetaAtualizada,
         tx,
       );
 

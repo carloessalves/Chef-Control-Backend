@@ -1,15 +1,17 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { AuditoriaService, ActorAuditoria } from '../auditoria/auditoria.service.js';
+import { SyncOutboxService } from '../sync-outbox/sync-outbox.service.js'; // 🆕
 import { CreateEmissorDto } from './dto/create-emissor.dto.js';
 import { UpdateEmissorDto } from './dto/update-emissor.dto.js';
-import { Prisma, TipoEvento, EntidadeAuditoria } from '@prisma/client';
+import { Prisma, TipoEvento, EntidadeAuditoria, SyncOutboxTipo } from '@prisma/client'; // 🆕 SyncOutboxTipo
 
 @Injectable()
 export class EmissoresService {
   constructor(
     private prisma: PrismaService,
     private auditoria: AuditoriaService,
+    private syncOutbox: SyncOutboxService, // 🆕
   ) {}
 
   // Fluxo operacional (tablet, sem login) — unidadeId vem do dispositivo
@@ -38,6 +40,13 @@ export class EmissoresService {
           entidadeId: emissor.id,
           dadosDepois: emissor,
         },
+        tx,
+      );
+
+      // 🆕 Enfileira para sincronização com o cloud (no-op se SERVER_MODE=cloud)
+      await this.syncOutbox.enfileirar(
+        SyncOutboxTipo.CRIAR_EMISSOR,
+        emissor,
         tx,
       );
 
@@ -96,6 +105,13 @@ export class EmissoresService {
         tx,
       );
 
+      // 🆕 Enfileira atualização para sincronização com o cloud
+      await this.syncOutbox.enfileirar(
+        SyncOutboxTipo.ATUALIZAR_EMISSOR,
+        depois,
+        tx,
+      );
+
       return depois;
     });
   }
@@ -119,6 +135,15 @@ export class EmissoresService {
           dadosAntes: antes,
           dadosDepois: depois,
         },
+        tx,
+      );
+
+      // 🆕 remove() é um soft delete (update de `ativo`), então também deve
+      // sincronizar como ATUALIZAR_EMISSOR — o cloud precisa saber que o
+      // emissor foi inativado.
+      await this.syncOutbox.enfileirar(
+        SyncOutboxTipo.ATUALIZAR_EMISSOR,
+        depois,
         tx,
       );
 
