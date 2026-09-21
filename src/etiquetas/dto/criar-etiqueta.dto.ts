@@ -2,6 +2,10 @@ import { IsUUID, IsEnum, IsOptional, IsString, IsDateString } from 'class-valida
 import { CondicaoArmazenamento } from '@prisma/client';
 
 export class CriarEtiquetaDto {
+  @IsOptional()
+  @IsUUID()
+  id?: string; // gerado pelo client (impressão imediata offline/online)
+
   @IsUUID()
   produtoId: string;
 
@@ -17,5 +21,5 @@ export class CriarEtiquetaDto {
 
   @IsOptional()
   @IsDateString()
-  dataManipulacao?: string; // se não enviado, usa a data/hora atual
+  dataManipulacao?: string;
 }

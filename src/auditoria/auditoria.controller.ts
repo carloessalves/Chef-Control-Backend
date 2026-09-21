@@ -12,7 +12,7 @@ export class AuditoriaController {
   constructor(private readonly auditoriaService: AuditoriaService) {}
 
   @Get()
-  @Roles(PapelUsuario.ADMIN)
+  @Roles(PapelUsuario.ADMIN, PapelUsuario.AUDITOR) // AUDITOR agora tem acesso de leitura
   findAll(@Query() query: FindAuditoriaDto) {
     return this.auditoriaService.findAll({
       entidade: query.entidade,
