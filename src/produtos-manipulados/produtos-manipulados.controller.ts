@@ -1,16 +1,5 @@
-// src/produtos-manipulados/produtos-manipulados.controller.ts
-
 import {
-  Controller,
-  Get,
-  Post,
-  Patch,
-  Delete,
-  Body,
-  Param,
-  Query,
-  Req,
-  UseGuards,
+  Controller, Get, Post, Patch, Delete, Body, Param, Query, Req, UseGuards,
 } from '@nestjs/common';
 import { PapelUsuario } from '@prisma/client';
 import { ProdutosManipuladosService } from './produtos-manipulados.service.js';
@@ -19,27 +8,20 @@ import { UpdateProdutoManipuladoDto } from './dto/update-produto-manipulado.dto.
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard.js';
 import { RolesGuard } from '../auth/guards/roles.guard.js';
 import { Roles } from '../auth/decorators/roles.decorator.js';
-import {
-  CurrentUser,
-  AuthenticatedUser,
-} from '../auth/decorators/current-user.decorator.js';
+import { CurrentUser, AuthenticatedUser } from '../auth/decorators/current-user.decorator.js';
 import { Public } from '../auth/decorators/public.decorator.js';
 import { DispositivoGuard } from '../dispositivos/dispositivo.guard.js';
 import { RequestWithDispositivo } from '../dispositivos/request-with-dispositivo.js';
+import { SyncApiKeyGuard } from '../sync-outbox/sync-api-key.guard.js'; // 🆕
 
 @Controller('produtos-manipulados')
 export class ProdutosManipuladosController {
   constructor(private readonly service: ProdutosManipuladosService) {}
 
-  // ---------- Fluxo operacional (tela "Produtos", sem login) — tablet pareado ----------
-
   @Public()
   @UseGuards(DispositivoGuard)
   @Post()
-  create(
-    @Body() dto: CreateProdutoManipuladoDto,
-    @Req() req: RequestWithDispositivo,
-  ) {
+  create(@Body() dto: CreateProdutoManipuladoDto, @Req() req: RequestWithDispositivo) {
     return this.service.create(dto, req.dispositivo.unidadeId, {
       dispositivoId: req.dispositivo.id,
     });
@@ -72,8 +54,6 @@ export class ProdutosManipuladosController {
     });
   }
 
-  // ---------- Fluxo administrativo (login, ADMIN) ----------
-
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(PapelUsuario.ADMIN)
   @Get('admin/listar')
@@ -81,10 +61,7 @@ export class ProdutosManipuladosController {
     @CurrentUser() user: AuthenticatedUser,
     @Query('incluirInativos') incluirInativos?: string,
   ) {
-    return this.service.findAllAdmin(
-      user.unidadeId,
-      incluirInativos === 'true',
-    );
+    return this.service.findAllAdmin(user.unidadeId, incluirInativos === 'true');
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)
@@ -101,12 +78,26 @@ export class ProdutosManipuladosController {
     });
   }
 
-  // Exclusão lógica (soft delete) — service.remove() exige o AuthenticatedUser
-  // completo (usa user.unidadeId para escopo + user.sub/papel para auditoria).
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(PapelUsuario.ADMIN)
   @Delete(':id')
   remove(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
     return this.service.remove(id, user);
+  }
+
+  /**
+   * 🆕 Endpoints de sincronização usados exclusivamente pelo Sync Worker (local -> cloud).
+   * Protegidos por SyncApiKeyGuard.
+   */
+  @UseGuards(SyncApiKeyGuard)
+  @Post('sync')
+  sincronizarCriacao(@Body() payload: any) {
+    return this.service.upsertParaSync(payload);
+  }
+
+  @UseGuards(SyncApiKeyGuard)
+  @Patch(':id/sync')
+  sincronizarAtualizacao(@Param('id') id: string, @Body() payload: any) {
+    return this.service.upsertParaSync({ ...payload, id });
   }
 }

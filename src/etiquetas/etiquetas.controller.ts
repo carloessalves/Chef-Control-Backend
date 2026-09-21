@@ -1,16 +1,5 @@
 // src/etiquetas/etiquetas.controller.ts
-import {
-  Controller,
-  Post,
-  Patch,
-  Get,
-  Param,
-  Body,
-  Query,
-  Req,
-  Res,
-  UseGuards,
-  ParseUUIDPipe,
+import { Controller, Post, Patch, Get, Param, Body, Query, Req, Res, UseGuards, ParseUUIDPipe,
 } from '@nestjs/common';
 import type { Request, Response } from 'express';
 import { EtiquetasService } from './etiquetas.service.js';
@@ -25,6 +14,7 @@ import { ReimprimirEtiquetaDto } from './dto/reimprimir-etiqueta.dto.js';
 import { AtualizarStatusEtiquetaDto } from './dto/atualizar-status-etiqueta.dto.js';
 import { ListarEtiquetasDto } from './dto/listar-etiquetas.dto.js';
 import { PapelUsuario } from '@prisma/client';
+import { SyncApiKeyGuard } from '../sync-outbox/sync-api-key.guard.js';
 
 @Controller('etiquetas')
 export class EtiquetasController {
@@ -60,6 +50,17 @@ export class EtiquetasController {
     @CurrentDevice() dispositivo: AuthenticatedDevice,
   ) {
     return this.etiquetasService.atualizarStatus(id, dto, dispositivo);
+  }
+
+  /**
+ * Endpoint de sincronização usado exclusivamente pelo Sync Worker (local -> cloud).
+ * Faz upsert por id: se já existir, ignora/atualiza; se não existir, cria.
+ * NÃO deve ser exposto para clientes finais (protegido por SyncApiKeyGuard).
+ */
+  @UseGuards(SyncApiKeyGuard)
+  @Post('sync')
+  async sincronizarCriacao(@Body() dto: CriarEtiquetaDto) {
+    return this.etiquetasService.upsertParaSync(dto);
   }
 
   // ---- Rota PÚBLICA de consulta via QR — sem device, sem login ----

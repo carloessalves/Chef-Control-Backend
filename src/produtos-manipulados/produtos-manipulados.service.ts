@@ -1,32 +1,27 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { AuditoriaService, ActorAuditoria } from '../auditoria/auditoria.service.js';
+import { SyncOutboxService } from '../sync-outbox/sync-outbox.service.js'; // 🆕
+import { SyncOutboxWorkerService } from '../sync-outbox/sync-outbox-worker.service.js'; // 🆕
 import { CreateProdutoManipuladoDto } from './dto/create-produto-manipulado.dto.js';
 import { UpdateProdutoManipuladoDto } from './dto/update-produto-manipulado.dto.js';
 import { AuthenticatedUser } from '../auth/decorators/current-user.decorator.js';
-import { Prisma, TipoEvento, EntidadeAuditoria, ProdutoManipulado } from '@prisma/client';
+import { Prisma, TipoEvento, EntidadeAuditoria, ProdutoManipulado, SyncOutboxTipo } from '@prisma/client'; // 🆕
 
 @Injectable()
 export class ProdutosManipuladosService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditoria: AuditoriaService,
+    private readonly syncOutbox: SyncOutboxService, // 🆕
+    private readonly syncOutboxWorker: SyncOutboxWorkerService, // 🆕
   ) {}
 
-  // ---------- Fluxo operacional (tablet, sem login) ----------
-
-  async create(
-    dto: CreateProdutoManipuladoDto,
-    unidadeId: string,
-    actor: ActorAuditoria,
-  ) {
+  async create(dto: CreateProdutoManipuladoDto, unidadeId: string, actor: ActorAuditoria) {
     await this.validarUnidade(unidadeId);
+    if (dto.categoriaId) await this.validarCategoria(dto.categoriaId);
 
-    if (dto.categoriaId) {
-      await this.validarCategoria(dto.categoriaId);
-    }
-
-    return this.prisma.$transaction(async (tx) => {
+    const resultado = await this.prisma.$transaction(async (tx) => {
       const produto = await tx.produtoManipulado.create({
         data: {
           nome: dto.nome,
@@ -49,8 +44,14 @@ export class ProdutosManipuladosService {
         tx,
       );
 
+      // 🆕 Enfileira para sincronização com o cloud
+      await this.syncOutbox.enfileirar(SyncOutboxTipo.CRIAR_PRODUTO, produto, tx);
+
       return produto;
     });
+
+    this.syncOutboxWorker.dispararProcessamentoOtimista(); // 🆕
+    return resultado;
   }
 
   async findAll(unidadeId: string) {
@@ -65,19 +66,11 @@ export class ProdutosManipuladosService {
     return this.buscarOuFalhar(id, unidadeId, true);
   }
 
-  async update(
-    id: string,
-    dto: UpdateProdutoManipuladoDto,
-    unidadeId: string,
-    actor: ActorAuditoria,
-  ) {
-    const antes = await this.buscarOuFalhar(id, unidadeId, true); // valida existência + escopo da unidade
+  async update(id: string, dto: UpdateProdutoManipuladoDto, unidadeId: string, actor: ActorAuditoria) {
+    const antes = await this.buscarOuFalhar(id, unidadeId, true);
+    if (dto.categoriaId) await this.validarCategoria(dto.categoriaId);
 
-    if (dto.categoriaId) {
-      await this.validarCategoria(dto.categoriaId);
-    }
-
-    return this.prisma.$transaction(async (tx) => {
+    const resultado = await this.prisma.$transaction(async (tx) => {
       const depois = await tx.produtoManipulado.update({
         where: { id },
         data: dto,
@@ -96,17 +89,20 @@ export class ProdutosManipuladosService {
         tx,
       );
 
+      // 🆕 Enfileira atualização para sincronização com o cloud
+      await this.syncOutbox.enfileirar(SyncOutboxTipo.ATUALIZAR_PRODUTO, depois, tx);
+
       return depois;
     });
+
+    this.syncOutboxWorker.dispararProcessamentoOtimista(); // 🆕
+    return resultado;
   }
 
-  // ---------- Fluxo administrativo (login, ADMIN) ----------
-
-  /** Exclusão (soft delete) é ação sensível: só ADMIN, via JWT. */
   async remove(id: string, user: AuthenticatedUser) {
     const produto = await this.buscarOuFalhar(id, user.unidadeId, false);
 
-    return this.prisma.$transaction(async (tx) => {
+    const resultado = await this.prisma.$transaction(async (tx) => {
       const depois = await tx.produtoManipulado.update({
         where: { id },
         data: { ativo: false },
@@ -125,27 +121,49 @@ export class ProdutosManipuladosService {
         tx,
       );
 
+      // 🆕 soft delete também é uma atualização — precisa sincronizar
+      await this.syncOutbox.enfileirar(SyncOutboxTipo.ATUALIZAR_PRODUTO, depois, tx);
+
       return depois;
     });
+
+    this.syncOutboxWorker.dispararProcessamentoOtimista(); // 🆕
+    return resultado;
   }
 
   async findAllAdmin(unidadeId: string, incluirInativos: boolean) {
     return this.prisma.produtoManipulado.findMany({
-      where: {
-       unidadeId,
-        ...(incluirInativos ? {} : { ativo: true }),
-      },
+      where: { unidadeId, ...(incluirInativos ? {} : { ativo: true }) },
       include: { categoria: true },
       orderBy: { nome: 'asc' },
     });
   }
-  
-  // ---------- Helpers ----------
 
   /**
-   * Busca um produto manipulado por id + unidadeId, lançando NotFoundException
-   * caso não exista. Centraliza a lógica repetida entre findOne, update e remove.
+   * 🆕 Usado exclusivamente pelos endpoints POST/PATCH /produtos-manipulados/sync.
+   * O payload vindo do outbox inclui a relação `categoria` (via include no create/
+   * update originais) — ela é ignorada aqui pois listamos os campos explicitamente.
    */
+  async upsertParaSync(payload: any) {
+    return this.prisma.produtoManipulado.upsert({
+      where: { id: payload.id },
+      create: {
+        id: payload.id,
+        nome: payload.nome,
+        categoriaId: payload.categoriaId ?? null,
+        alergenos: payload.alergenos ?? [],
+        ativo: payload.ativo ?? true,
+        unidadeId: payload.unidadeId,
+      },
+      update: {
+        nome: payload.nome,
+        categoriaId: payload.categoriaId ?? null,
+        alergenos: payload.alergenos ?? [],
+        ativo: payload.ativo,
+      },
+    });
+  }
+
   private async buscarOuFalhar(
     id: string,
     unidadeId: string,
@@ -155,33 +173,17 @@ export class ProdutosManipuladosService {
       where: { id, unidadeId },
       ...(comCategoria ? { include: { categoria: true } } : {}),
     });
-
-    if (!produto) {
-      throw new NotFoundException('Produto não encontrado.');
-    }
-
+    if (!produto) throw new NotFoundException('Produto não encontrado.');
     return produto;
   }
 
   private async validarUnidade(unidadeId: string) {
-    const unidade = await this.prisma.unidade.findFirst({
-      where: { id: unidadeId, ativo: true },
-    });
-
-    if (!unidade) {
-      throw new NotFoundException('Unidade não encontrada ou inativa.');
-    }
+    const unidade = await this.prisma.unidade.findFirst({ where: { id: unidadeId, ativo: true } });
+    if (!unidade) throw new NotFoundException('Unidade não encontrada ou inativa.');
   }
 
   private async validarCategoria(categoriaId: string) {
-    const categoria = await this.prisma.categoriaProduto.findFirst({
-      where: { id: categoriaId, ativo: true },
-    });
-
-    if (!categoria) {
-      throw new NotFoundException(
-        'Categoria de produto não encontrada ou inativa.',
-      );
-    }
+    const categoria = await this.prisma.categoriaProduto.findFirst({ where: { id: categoriaId, ativo: true } });
+    if (!categoria) throw new NotFoundException('Categoria de produto não encontrada ou inativa.');
   }
 }

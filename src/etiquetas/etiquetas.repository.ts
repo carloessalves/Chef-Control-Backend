@@ -9,7 +9,6 @@ type PrismaClientOrTx = PrismaService | Prisma.TransactionClient;
 export class EtiquetasRepository {
   constructor(private readonly prisma: PrismaService) {}
 
-  /** Permite executar operações dentro de uma transação Prisma */
   async executarEmTransacao<T>(
     fn: (tx: Prisma.TransactionClient) => Promise<T>,
   ): Promise<T> {
@@ -87,14 +86,8 @@ export class EtiquetasRepository {
     });
   }
 
-  // ---------- Histórico de Reimpressões ----------
-
   async criarHistoricoReimpressao(
-    data: {
-      etiquetaId: string;
-      motivo: string;
-      dispositivoId: string;
-    },
+    data: { etiquetaId: string; motivo: string; dispositivoId: string },
     client: PrismaClientOrTx = this.prisma,
   ) {
     return client.historicoReimpressao.create({ data });
@@ -110,18 +103,42 @@ export class EtiquetasRepository {
     });
   }
 
-  // ---------- Consulta pública ----------
-
-  /**
-   * Busca por id puro, SEM filtro de unidadeId — intencional, pois quem
-   * escaneia o QR não tem essa informação. Seguro porque exige o UUID
-   * exato (não enumerável em tempo razoável) e o service filtra os
-   * campos retornados para não expor dados sensíveis.
-   */
   async encontrarPublicaPorId(id: string, client: PrismaClientOrTx = this.prisma) {
     return client.etiqueta.findUnique({
       where: { id },
       include: { produto: true, emissor: true },
+    });
+  }
+
+  /**
+   * 🆕 Upsert usado exclusivamente pelo endpoint /sync (chamado pelo Sync Worker
+   * do servidor local). Idempotente por id — protege contra reenvio em caso de
+   * timeout de rede sem gerar erro de PK duplicada.
+   * Ignora campos extras que não pertencem ao model (payload vem do outbox).
+   */
+  async upsertParaSync(payload: any, client: PrismaClientOrTx = this.prisma) {
+    return client.etiqueta.upsert({
+      where: { id: payload.id },
+      create: {
+        id: payload.id,
+        produtoId: payload.produtoId,
+        emissorId: payload.emissorId,
+        unidadeId: payload.unidadeId,
+        dispositivoId: payload.dispositivoId,
+        emissorUsuarioId: payload.emissorUsuarioId ?? null,
+        condicao: payload.condicao,
+        lote: payload.lote ?? null,
+        dataManipulacao: payload.dataManipulacao,
+        dataValidade: payload.dataValidade,
+        status: payload.status,
+        motivoReimpressao: payload.motivoReimpressao ?? null,
+        motivoDescarte: payload.motivoDescarte ?? null,
+      } as Prisma.EtiquetaUncheckedCreateInput,
+      update: {
+        status: payload.status,
+        motivoReimpressao: payload.motivoReimpressao ?? null,
+        motivoDescarte: payload.motivoDescarte ?? null,
+      },
     });
   }
 }

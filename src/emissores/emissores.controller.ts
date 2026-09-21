@@ -1,14 +1,5 @@
 import {
-  Controller,
-  Get,
-  Post,
-  Patch,
-  Delete,
-  Body,
-  Param,
-  Req,
-  UseGuards,
-  ParseUUIDPipe,
+  Controller, Get, Post, Patch, Delete, Body, Param, Req, UseGuards, ParseUUIDPipe,
 } from '@nestjs/common';
 import { PapelUsuario } from '@prisma/client';
 import { EmissoresService } from './emissores.service.js';
@@ -20,24 +11,17 @@ import { Roles } from '../auth/decorators/roles.decorator';
 import { DispositivoGuard } from '../dispositivos/dispositivo.guard';
 import { RequestWithDispositivo } from '../dispositivos/request-with-dispositivo.js';
 import { Public } from '../auth/decorators/public.decorator';
-import {
-  CurrentUser,
-  AuthenticatedUser,
-} from '../auth/decorators/current-user.decorator';
+import { CurrentUser, AuthenticatedUser } from '../auth/decorators/current-user.decorator';
+import { SyncApiKeyGuard } from '../sync-outbox/sync-api-key.guard.js'; // 🆕
 
 @Controller('emissores')
 export class EmissoresController {
   constructor(private readonly emissoresService: EmissoresService) {}
 
-  // Fluxo operacional (tela de identificação do emissor) — sem login,
-  // mas exige tablet pareado (x-device-id válido).
   @Public()
   @UseGuards(DispositivoGuard)
   @Post()
-  create(
-    @Body() dto: CreateEmissorDto,
-    @Req() req: RequestWithDispositivo,
-  ) {
+  create(@Body() dto: CreateEmissorDto, @Req() req: RequestWithDispositivo) {
     return this.emissoresService.create(dto, req.dispositivo.unidadeId, {
       dispositivoId: req.dispositivo.id,
     });
@@ -53,14 +37,10 @@ export class EmissoresController {
   @Public()
   @UseGuards(DispositivoGuard)
   @Get(':id')
-  findOne(
-    @Param('id', ParseUUIDPipe) id: string,
-    @Req() req: RequestWithDispositivo,
-  ) {
+  findOne(@Param('id', ParseUUIDPipe) id: string, @Req() req: RequestWithDispositivo) {
     return this.emissoresService.findOne(id, req.dispositivo.unidadeId);
   }
 
-  // Gestão administrativa — exige login (ADMIN)
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(PapelUsuario.ADMIN)
   @Patch(':id')
@@ -70,21 +50,34 @@ export class EmissoresController {
     @CurrentUser() user: AuthenticatedUser,
   ) {
     return this.emissoresService.update(id, dto, {
-  usuarioId: user.sub,
-  papelNoMomento: user.papel,
-});
+      usuarioId: user.sub,
+      papelNoMomento: user.papel,
+    });
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(PapelUsuario.ADMIN)
   @Delete(':id')
-  remove(
-    @Param('id', ParseUUIDPipe) id: string,
-    @CurrentUser() user: AuthenticatedUser,
-  ) {
+  remove(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() user: AuthenticatedUser) {
     return this.emissoresService.remove(id, {
-  usuarioId: user.sub,
-  papelNoMomento: user.papel,
-});
+      usuarioId: user.sub,
+      papelNoMomento: user.papel,
+    });
+  }
+
+  /**
+   * 🆕 Endpoints de sincronização usados exclusivamente pelo Sync Worker (local -> cloud).
+   * Protegidos por SyncApiKeyGuard — nunca expostos a clientes finais.
+   */
+  @UseGuards(SyncApiKeyGuard)
+  @Post('sync')
+  sincronizarCriacao(@Body() payload: any) {
+    return this.emissoresService.upsertParaSync(payload);
+  }
+
+  @UseGuards(SyncApiKeyGuard)
+  @Patch(':id/sync')
+  sincronizarAtualizacao(@Param('id') id: string, @Body() payload: any) {
+    return this.emissoresService.upsertParaSync({ ...payload, id });
   }
 }
